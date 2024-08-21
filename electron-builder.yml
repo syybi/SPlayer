@@ -104,5 +104,5 @@ publish:
   provider: github
   # 自动更新检查的 URL
   # url: https://example.com/auto-updates
-  owner: "seemon"
-  repo: "DreamBudMusic"
+  owner: "syybi"
+  repo: "SPlayer"
