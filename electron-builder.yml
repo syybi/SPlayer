@@ -1,8 +1,8 @@
 # 应用程序的唯一标识符
-appId: com.imsyy.mengyasplayer
+appId: com.seemon.dreambudmusic
 # 应用程序的产品名称
-productName: 梦芽音乐 | SPlayer
-copyright: Copyright © Simeng 2024
+productName: DreamBudMusic
+copyright: Copyright © seemon 2024
 # 构建资源所在的目录
 directories:
   buildResources: build
@@ -104,5 +104,5 @@ publish:
   provider: github
   # 自动更新检查的 URL
   # url: https://example.com/auto-updates
-  owner: "simeng"
+  owner: "seemon"
   repo: "DreamBudMusic"
