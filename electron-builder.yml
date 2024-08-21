@@ -1,8 +1,8 @@
 # 应用程序的唯一标识符
-appId: com.imsyy.splayer
+appId: com.imsyy.mengyasplayer
 # 应用程序的产品名称
-productName: SPlayer
-copyright: Copyright © imsyy 2023
+productName: 梦芽音乐 | SPlayer
+copyright: Copyright © Simeng 2024
 # 构建资源所在的目录
 directories:
   buildResources: build
@@ -19,7 +19,7 @@ asarUnpack:
 # Windows 平台配置
 win:
   # 可执行文件名
-  executableName: SPlayer
+  executableName: DreamBudMusic
   # 应用程序的图标文件路径
   icon: public/imgs/icons/favicon-512x512.png
   # 构建类型
@@ -47,7 +47,7 @@ nsis:
 # macOS 平台配置
 mac:
   # 可执行文件名
-  executableName: SPlayer
+  executableName: DreamBudMusic
   # 应用程序的图标文件路径
   icon: public/imgs/icons/favicon-512x512.png
   # 权限继承的文件路径
@@ -78,7 +78,7 @@ dmg:
 # Linux 平台配置
 linux:
   # 可执行文件名
-  executableName: SPlayer
+  executableName: DreamBudMusic
   # 应用程序的图标文件路径
   icon: public/imgs/icons/favicon-512x512.png
   # 构建类型
@@ -89,7 +89,7 @@ linux:
     - rpm
     - tar.gz
   # 维护者信息
-  maintainer: imsyy.top
+  maintainer: home.syyxin.eu.org
   # 应用程序类别
   category: Audio;Music
 # AppImage 配置
@@ -104,5 +104,5 @@ publish:
   provider: github
   # 自动更新检查的 URL
   # url: https://example.com/auto-updates
-  owner: "imsyy"
-  repo: "SPlayer"
+  owner: "simeng"
+  repo: "DreamBudMusic"
