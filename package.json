@@ -1,6 +1,6 @@
 {
   "name": "DreamBudMusic",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "A minimalist music player",
   "main": "./out/main/index.js",
   "author": "simeng",
