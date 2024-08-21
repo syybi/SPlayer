@@ -45,7 +45,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SPlayer-dev
+          name: DreamBudMusic-dev
           path: dist
       # 创建 GitHub Release
       - name: Release
