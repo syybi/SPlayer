@@ -1,12 +1,12 @@
 {
-  "name": "splayer",
+  "name": "DreamBudMusic",
   "version": "2.1.0",
   "description": "A minimalist music player",
   "main": "./out/main/index.js",
-  "author": "imsyy",
-  "home": "https://imsyy.top",
-  "github": "https://github.com/imsyy/SPlayer",
-  "repository": "github:imsyy/SPlayer",
+  "author": "simeng",
+  "home": "https://home.syyxin.eu.org",
+  "github": "https://github.com/syybi/SPlayer",
+  "repository": "github:syybi/SPlayer",
   "license": "AGPL-3.0",
   "license-file": "LICENSE",
   "engines": {
