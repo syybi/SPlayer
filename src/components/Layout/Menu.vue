@@ -181,6 +181,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
 
 // 生成歌单列表
 const renderPlaylist = (playlist: CoverType[], showCover: boolean) => {
+  if (!isLogin()) return [];
   return playlist.map((playlist) => ({
     key: playlist.id,
     label: () =>

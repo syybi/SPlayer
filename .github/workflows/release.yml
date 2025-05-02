@@ -21,7 +21,10 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
+          node-version: "22.x"
+      # 安装 pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
       # 复制环境变量文件
       - name: Copy .env.example
         run: |
@@ -32,10 +35,10 @@ jobs:
           }
       # 安装项目依赖
       - name: Install Dependencies
-        run: npm install
+        run: pnpm install
       # 构建 Electron App
       - name: Build Electron App for Windows
-        run: npm run build:win || true
+        run: pnpm run build:win || true
         env:
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
       # 上传构建产物
@@ -66,6 +69,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20.x"
+      # 安装 pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
       # 复制环境变量文件
       - name: Copy .env.example
         run: |
@@ -76,10 +82,10 @@ jobs:
           fi
       # 安装项目依赖
       - name: Install Dependencies
-        run: npm install
+        run: pnpm install
       # 构建 Electron App
       - name: Build Electron App for macOS
-        run: npm run build:mac || true
+        run: pnpm run build:mac || true
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
@@ -111,6 +117,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20.x"
+      # 安装 pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
       # 更新 Ubuntu 软件源
       - name: Ubuntu Update with sudo
         run: sudo apt-get update
@@ -135,10 +144,10 @@ jobs:
           fi
       # 安装项目依赖
       - name: Install Dependencies
-        run: npm install
+        run: pnpm install
       # 构建 Electron App
       - name: Build Electron App for Linux
-        run: npm run build:linux || true
+        run: pnpm run build:linux || true
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}

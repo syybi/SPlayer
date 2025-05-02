@@ -12,7 +12,6 @@ import { heartRateList } from "@/api/playlist";
 import { formatSongsList } from "./format";
 import { isLogin } from "./auth";
 import { openUserLogin } from "./modal";
-import { scrobble } from "@/api/user";
 import { personalFm, personalFmToTrash } from "@/api/rec";
 import blob from "./blob";
 
@@ -647,8 +646,6 @@ class Player {
       const playListLength = playList.length;
       // 播放列表是否为空
       if (playListLength === 0) throw new Error("Play list is empty");
-      // 打卡
-      this.scrobbleSong();
       // 若为私人FM
       if (statusStore.personalFmMode) {
         await this.initPersonalFM(true);
@@ -853,9 +850,7 @@ class Player {
     const musicStore = useMusicStore();
     const statusStore = useStatusStore();
     // 获取配置
-    const { showTip, scrobble, play } = options;
-    // 打卡
-    if (scrobble) this.scrobbleSong();
+    const { showTip, play } = options;
     // 更新列表
     await dataStore.setPlayList(cloneDeep(data));
     // 关闭特殊模式
@@ -1107,29 +1102,6 @@ class Player {
       window.$message.error("心动模式开启出错，请重试");
     } finally {
       this.message?.destroy();
-    }
-  }
-  /**
-   * 听歌打卡
-   */
-  async scrobbleSong() {
-    const musicStore = useMusicStore();
-    const statusStore = useStatusStore();
-    const settingStore = useSettingStore();
-    try {
-      if (!isLogin()) return;
-      if (!settingStore.scrobbleSong) return;
-      // 获取所需数据
-      const playSongData = this.getPlaySongData();
-      if (!playSongData) return;
-      const { id, name } = playSongData;
-      const sourceid = musicStore.playPlaylistId;
-      const time = statusStore.duration;
-      // 网易云打卡
-      console.log("打卡：", id, name, sourceid, time);
-      await scrobble(id, sourceid, time);
-    } catch (error) {
-      console.error("Failed to scrobble song:", error);
     }
   }
   /**

@@ -29,6 +29,7 @@ import { radioSub } from "@/api/radio";
  */
 export const isLogin = (): 0 | 1 | 2 => {
   const dataStore = useDataStore();
+  if (!dataStore.userLoginStatus) return 0;
   if (dataStore.loginType === "uid") return 2;
   return getCookie("MUSIC_U") ? 1 : 0;
 };

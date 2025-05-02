@@ -21,6 +21,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.x"
+      # 安装 pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
       # 复制环境变量文件
       - name: Copy .env.example
         run: |
@@ -31,10 +34,10 @@ jobs:
           }
       # 安装项目依赖
       - name: Install Dependencies
-        run: npm install
+        run: pnpm install
       # 构建 Electron App
       - name: Build Electron App
-        run: npm run build:win
+        run: pnpm run build:win
         env:
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
       # 清理不必要的构建产物

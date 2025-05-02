@@ -38,7 +38,7 @@ const openWeb = () => {
   window.$dialog.info({
     title: "使用前告知",
     content:
-      "请知悉，该功能仍旧无法确保账号的安全性！请自行决定是否使用！如遇打开窗口后页面出现白屏或者无法点击等情况，请关闭后再试。在登录完成后，请点击菜单栏中的 “登录完成” 按钮以完成登录（ 通常位于窗口的左上角，macOS 位于顶部的全局菜单栏中 ）",
+      "请知悉，该功能仍旧无法确保账号的安全性！请自行决定是否使用！如遇打开窗口后页面出现白屏或者无法点击等情况，请关闭后重试",
     positiveText: "我已了解",
     negativeText: "取消",
     onPositiveClick: () => window.electron.ipcRenderer.send("open-login-web"),
