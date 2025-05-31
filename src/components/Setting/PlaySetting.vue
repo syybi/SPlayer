@@ -252,29 +252,44 @@ const songLevelData = {
     value: "higher",
   },
   exhigh: {
-    label: "极高 HQ",
-    tip: "近 CD 品质的细节体验，最高 320kbps",
+    label: "极高 (HQ)",
+    tip: "近CD品质的细节体验，最高320kbps",
     value: "exhigh",
   },
   lossless: {
-    label: "无损 SQ",
-    tip: "高保真无损音质，最高 48kHz/16bit",
+    label: "无损 (SQ)",
+    tip: "高保真无损音质，最高48kHz/16bit",
     value: "lossless",
   },
   hires: {
-    label: "高清臻音 Spatial Audio",
-    tip: "环绕声体验，声音听感增强，96kHz/24bit",
+    label: "高解析度无损 (Hi-Res)",
+    tip: "更饱满清晰的高解析度音质，最高192kHz/24bit",
     value: "hires",
   },
+  jyeffect: {
+    label: "高清臻音 (Spatial Audio)",
+    tip: "声音听感增强，96kHz/24bit",
+    value: "jyeffect",
+  },
   jymaster: {
-    label: "超清母带 Master",
+    label: "超清母带 (Master)",
     tip: "还原音频细节，192kHz/24bit",
     value: "jymaster",
   },
   sky: {
-    label: "沉浸环绕声 Surround Audio",
-    tip: "沉浸式体验，最高 5.1 声道",
+    label: "沉浸环绕声 (Surround Audio)",
+    tip: "沉浸式空间环绕音感，最高5.1声道",
     value: "sky",
+  },
+  vivid: {
+    label: "臻音全景声 (Audio Vivid)",
+    tip: "极致沉浸三维空间音频，最高7.1.4声道",
+    value: "vivid",
+  },
+  dolby: {
+    label: "杜比全景声 (Dolby Atmos)",
+    tip: "杜比全景声音乐，沉浸式聆听体验",
+    value: "dolby",
   },
 };
 
