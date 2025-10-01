@@ -8,7 +8,7 @@
       </Transition>
       <!-- 真实图片 -->
       <img
-        v-if="src"
+        v-if="imgSrc"
         ref="imgRef"
         :src="imgSrc"
         :key="imgSrc"
@@ -69,10 +69,27 @@ const imageError = (e: Event) => {
 };
 
 // 可视状态变化
-watchOnce(isCanLook, (show) => {
-  emit("update:show", show);
-  if (show) imgSrc.value = props.src;
-});
+watch(
+  isCanLook,
+  (show) => {
+    emit("update:show", show);
+    if (show) imgSrc.value = props.src;
+  },
+  { immediate: true },
+);
+
+// 监听 src 变化
+watch(
+  () => props.src,
+  (val) => {
+    isLoaded.value = false;
+    if (isCanLook.value) {
+      imgSrc.value = val;
+    } else {
+      imgSrc.value = undefined;
+    }
+  },
+);
 </script>
 
 <style lang="scss" scoped>

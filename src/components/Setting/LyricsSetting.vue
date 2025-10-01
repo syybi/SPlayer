@@ -29,7 +29,7 @@
       <n-card class="set-item">
         <div class="label">
           <n-text class="name">歌词字体大小</n-text>
-          <n-text class="tip" :depth="3">单位 px，最小 30，最大 60</n-text>
+          <n-text class="tip" :depth="3">单位 px，最小 12，最大 60</n-text>
         </div>
         <n-flex>
           <Transition name="fade" mode="out-in">
@@ -45,7 +45,7 @@
           </Transition>
           <n-input-number
             v-model:value="settingStore.lyricFontSize"
-            :min="30"
+            :min="12"
             :max="60"
             class="set"
             placeholder="请输入歌词字体大小"
@@ -58,7 +58,7 @@
       <n-card class="set-item">
         <div class="label">
           <n-text class="name">翻译歌词大小</n-text>
-          <n-text class="tip" :depth="3">单位 px，最小 12，最大 40</n-text>
+          <n-text class="tip" :depth="3">单位 px，最小 5，最大 40</n-text>
         </div>
         <n-flex>
           <Transition name="fade" mode="out-in">
@@ -74,7 +74,7 @@
           </Transition>
           <n-input-number
             v-model:value="settingStore.lyricTranFontSize"
-            :min="12"
+            :min="5"
             :max="40"
             :disabled="settingStore.useAMLyrics"
             class="set"
@@ -90,7 +90,7 @@
       <n-card class="set-item">
         <div class="label">
           <n-text class="name">音译歌词大小</n-text>
-          <n-text class="tip" :depth="3">单位 px，最小 12，最大 40</n-text>
+          <n-text class="tip" :depth="3">单位 px，最小 5，最大 40</n-text>
         </div>
         <n-flex>
           <Transition name="fade" mode="out-in">
@@ -106,7 +106,7 @@
           </Transition>
           <n-input-number
             v-model:value="settingStore.lyricRomaFontSize"
-            :min="12"
+            :min="5"
             :max="40"
             :disabled="settingStore.useAMLyrics"
             class="set"
@@ -285,8 +285,8 @@
           :options="
             Array.from({ length: 41 }, (_, i) => {
               return {
-                label: `${20 + i} px`,
-                value: 20 + i,
+                label: `${10 + i} px`,
+                value: 10 + i,
               };
             })
           "

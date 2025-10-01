@@ -176,7 +176,15 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           children: [...likedPlaylist.value],
         },
       ]
-    : [];
+    : [
+        {
+          key: "local",
+          link: "local",
+          label: "本地歌曲",
+          show: isElectron,
+          icon: renderIcon("FolderMusic"),
+        },
+      ];
 });
 
 // 生成歌单列表

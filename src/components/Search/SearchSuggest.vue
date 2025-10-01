@@ -27,7 +27,11 @@
         <!-- 搜索建议 -->
         <Transition name="fade" mode="out-in" @after-leave="calcSearchSuggestHeights">
           <div
-            v-if="Object.keys(searchSuggestData)?.length && searchSuggestData?.order"
+            v-if="
+              Object.keys(searchSuggestData)?.length &&
+              searchSuggestData?.order &&
+              settingStore.useOnlineService
+            "
             ref="searchSuggestRef"
             class="all-suggest"
           >
@@ -60,13 +64,14 @@
 
 <script setup lang="ts">
 import { searchSuggest } from "@/api/search";
-import { useStatusStore } from "@/stores";
+import { useStatusStore, useSettingStore } from "@/stores";
 
 const emit = defineEmits<{
   toSearch: [key: number | string, type: string];
 }>();
 
 const statusStore = useStatusStore();
+const settingStore = useSettingStore();
 
 // 搜索建议数据
 const searchSuggestData = ref<any>({});
@@ -125,7 +130,7 @@ const calcSearchSuggestHeights = () => {
 watchDebounced(
   () => statusStore.searchInputValue,
   (val) => {
-    if (!val || val === "") return;
+    if (!val || val === "" || !settingStore.useOnlineService) return;
     getSearchSuggest(val);
   },
   { debounce: 300 },

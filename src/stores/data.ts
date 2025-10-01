@@ -15,6 +15,7 @@ import { formatCategoryList } from "@/utils/format";
 
 interface ListState {
   playList: SongType[];
+  originalPlayList: SongType[];
   historyList: SongType[];
   cloudPlayList: SongType[];
   searchHistory: string[];
@@ -54,6 +55,8 @@ export const useDataStore = defineStore("data", {
   state: (): ListState => ({
     // 播放列表
     playList: [],
+    // 原始播放列表
+    originalPlayList: [],
     // 播放历史
     historyList: [],
     // 搜索历史
@@ -156,6 +159,29 @@ export const useDataStore = defineStore("data", {
         console.error("Error updating playlist:", error);
         throw error;
       }
+    },
+    // 保存原始播放列表
+    async setOriginalPlayList(data: SongType[]): Promise<void> {
+      const snapshot = cloneDeep(data);
+      this.originalPlayList = snapshot;
+      await musicDB.setItem("originalPlayList", snapshot);
+    },
+    // 获取原始播放列表
+    async getOriginalPlayList(): Promise<SongType[] | null> {
+      if (Array.isArray(this.originalPlayList) && this.originalPlayList.length > 0) {
+        return this.originalPlayList;
+      }
+      const data = (await musicDB.getItem("originalPlayList")) as SongType[] | null;
+      if (Array.isArray(data) && data.length > 0) {
+        this.originalPlayList = data;
+        return data;
+      }
+      return null;
+    },
+    // 清除原始播放列表
+    async clearOriginalPlayList(): Promise<void> {
+      this.originalPlayList = [];
+      await musicDB.setItem("originalPlayList", []);
     },
     // 新增下一首播放歌曲
     async setNextPlaySong(song: SongType, index: number): Promise<number> {

@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { pathCase } from "change-case";
-import NeteaseCloudMusicApi from "NeteaseCloudMusicApi";
+import NeteaseCloudMusicApi from "@neteaseapireborn/api";
 import log from "../../main/logger";
 
 // 获取数据
@@ -33,12 +33,12 @@ const initNcmAPI = async (fastify: FastifyInstance) => {
   // 主信息
   fastify.get("/netease", (_, reply) => {
     reply.send({
-      name: "NeteaseCloudMusicApi",
-      version: "4.25.0",
-      description: "网易云音乐 Node.js API service",
-      author: "@binaryify",
+      name: "@neteaseapireborn/api",
+      version: "4.29.2",
+      description: "网易云音乐 API Enhanced",
+      author: "@MoeFurina",
       license: "MIT",
-      url: "https://gitlab.com/Binaryify/neteasecloudmusicapi",
+      url: "https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced",
     });
   });
 

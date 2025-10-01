@@ -5,10 +5,13 @@
     "src/**/*",
     "src/**/*.vue",
     "electron/main/index.d.ts",
-    "electron/preload/index.d.ts"
-, "dist/lastfm.ts"  ],
+    "electron/preload/index.d.ts",
+    "dist/lastfm.ts"
+  ],
   "compilerOptions": {
     "composite": true,
+    "esModuleInterop": true,
+    "moduleResolution": "bundler",
     "maxNodeModuleJsDepth": 2,
     "baseUrl": ".",
     "paths": {

@@ -262,7 +262,7 @@ const onlineMatch = debounce(
 const changeCover = async () => {
   const newPath = await window.electron.ipcRenderer.invoke("choose-image");
   if (!newPath) return;
-  coverData.value = newPath;
+  coverData.value = `file://${newPath}`;
 };
 
 // 实时修改列表
@@ -300,7 +300,9 @@ const saveSongInfo = debounce(async (song: SongType) => {
       cover:
         coverData.value.startsWith("blob:") || coverData.value === "/images/song.jpg?assest"
           ? null
-          : coverData.value,
+          : coverData.value.startsWith("file://")
+            ? coverData.value.replace(/^file:\/\//, "")
+            : coverData.value,
     };
     console.log(song.path, metadata);
     await window.electron.ipcRenderer.invoke("set-music-metadata", song.path, metadata);

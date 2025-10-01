@@ -28,7 +28,7 @@
       />
     </Transition>
     <!-- 默认内容 -->
-    <SearchDefault @to-search="toSearch" />
+    <SearchDefault v-if="settingStore.useOnlineService" @to-search="toSearch" />
     <!-- 搜索结果 -->
     <SearchSuggest @to-search="toSearch" />
     <!-- 右键菜单 -->
@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { useStatusStore, useDataStore } from "@/stores";
+import { useStatusStore, useDataStore, useSettingStore } from "@/stores";
 import { searchDefault } from "@/api/search";
 import SearchInpMenu from "@/components/Menu/SearchInpMenu.vue";
 import player from "@/utils/player";
@@ -47,13 +47,16 @@ import { formatSongsList } from "@/utils/format";
 const router = useRouter();
 const dataStore = useDataStore();
 const statusStore = useStatusStore();
+const settingStore = useSettingStore();
 
 // 右键菜单
 const searchInpMenuRef = ref<InstanceType<typeof SearchInpMenu> | null>(null);
 
 // 搜索框数据
 const searchInputRef = ref<HTMLInputElement | null>(null);
-const searchPlaceholder = ref<string>("搜索音乐 / 视频");
+const searchPlaceholder = ref<string>(
+  settingStore.useOnlineService ? "搜索音乐 / 视频" : "搜索本地音乐",
+);
 const searchRealkeyword = ref<string>("");
 
 // 搜索框输入限制
@@ -94,14 +97,23 @@ const updatePlaceholder = async () => {
 
 // 前往搜索
 const toSearch = async (key: any, type: string = "keyword") => {
+  // 关闭搜索框
+  statusStore.searchFocus = false;
+  searchInputRef.value?.blur();
   // 未输入内容且不存在推荐
   if (!key && searchPlaceholder.value === "搜索音乐 / 视频") return;
   if (!key && searchPlaceholder.value !== "搜索音乐 / 视频" && searchRealkeyword.value) {
     key = searchRealkeyword.value?.trim();
   }
-  // 关闭搜索框
-  statusStore.searchFocus = false;
-  searchInputRef.value?.blur();
+  // 本地搜索
+  if (!settingStore.useOnlineService) {
+    // 跳转本地搜索页面
+    router.push({
+      name: "search",
+      query: { keyword: key },
+    });
+    return;
+  }
   // 更新推荐
   updatePlaceholder();
   // 前往搜索
@@ -143,9 +155,10 @@ const toSearch = async (key: any, type: string = "keyword") => {
 };
 
 onMounted(() => {
-  updatePlaceholder();
   // 每分钟更新
-  useIntervalFn(updatePlaceholder, 60 * 1000);
+  if (settingStore.useOnlineService) {
+    useIntervalFn(updatePlaceholder, 60 * 1000, { immediate: true });
+  }
 });
 </script>
 

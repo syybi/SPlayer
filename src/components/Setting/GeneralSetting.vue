@@ -142,13 +142,7 @@
           <n-text class="name">在线服务</n-text>
           <n-text class="tip" :depth="3">是否开启软件的在线服务</n-text>
         </div>
-        <n-switch
-          class="set"
-          :disabled="true"
-          :value="useOnlineService"
-          :round="false"
-          @update:value="modeChange"
-        />
+        <n-switch class="set" :value="useOnlineService" :round="false" @update:value="modeChange" />
       </n-card>
       <n-card class="set-item">
         <div class="label">
@@ -256,12 +250,13 @@
 
 <script setup lang="ts">
 import type { SelectOption } from "naive-ui";
-import { useMusicStore, useSettingStore, useStatusStore } from "@/stores";
-import { isElectron } from "@/utils/helper";
+import { useDataStore, useMusicStore, useSettingStore, useStatusStore } from "@/stores";
+import { isDev, isElectron } from "@/utils/helper";
 import { isEmpty } from "lodash-es";
 import themeColor from "@/assets/data/themeColor.json";
 import player from "@/utils/player";
 
+const dataStore = useDataStore();
 const musicStore = useMusicStore();
 const settingStore = useSettingStore();
 const statusStore = useStatusStore();
@@ -319,26 +314,40 @@ const modeChange = (val: boolean) => {
   if (val) {
     window.$dialog.warning({
       title: "开启在线服务",
-      content: "确定开启软件的在线服务？更改将在重启后生效！",
+      content: "确定开启软件的在线服务？更改将在热重载后生效！",
       positiveText: "开启",
       negativeText: "取消",
       onPositiveClick: () => {
         useOnlineService.value = true;
         settingStore.useOnlineService = true;
+        // 清理播放数据
+        dataStore.$reset();
+        musicStore.$reset();
+        // 清空本地数据
+        localStorage.removeItem("data-store");
+        localStorage.removeItem("music-store");
+        // 热重载
+        window.location.reload();
       },
     });
   } else {
     window.$dialog.warning({
       title: "关闭在线服务",
       content:
-        "确定关闭软件的在线服务？将关闭包括搜索、登录、在线音乐播放等在内的全部在线服务，软件将会变为本地播放器！更改将在软件重启后生效！",
+        "确定关闭软件的在线服务？将关闭包括搜索、登录、在线音乐播放等在内的全部在线服务，并且将会退出登录状态，软件将会变为本地播放器！更改将在重启后生效！",
       positiveText: "关闭",
       negativeText: "取消",
       onPositiveClick: () => {
         useOnlineService.value = false;
         settingStore.useOnlineService = false;
+        // 清理播放数据
+        dataStore.$reset();
+        musicStore.$reset();
+        // 清空本地数据
+        localStorage.removeItem("data-store");
+        localStorage.removeItem("music-store");
         // 重启
-        window.electron.ipcRenderer.send("win-reload");
+        if (!isDev) window.electron.ipcRenderer.send("win-reload");
       },
       onNegativeClick: () => {
         useOnlineService.value = true;

@@ -90,6 +90,7 @@ export const openSongInfoEditor = (song: SongType) => {
     preset: "card",
     transformOrigin: "center",
     autoFocus: false,
+    trapFocus: false,
     // contentStyle: { padding: 0 },
     style: { width: "600px" },
     title: "编辑歌曲信息",

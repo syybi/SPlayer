@@ -29,7 +29,7 @@ class Player {
   // 频谱数据
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
-  private dataArray: Uint8Array | null = null;
+  private dataArray: Uint8Array<ArrayBuffer> | null = null;
   private source: MediaElementAudioSourceNode | null = null;
   // 其他数据
   private testNumber: number = 0;
@@ -39,6 +39,17 @@ class Player {
     this.player = new Howl({ src: [""], format: allowPlayFormat, autoplay: false });
     // 初始化媒体会话
     this.initMediaSession();
+  }
+  /**
+   * 洗牌数组（Fisher-Yates）
+   */
+  private shuffleArray<T>(arr: T[]): T[] {
+    const copy = arr.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
   }
   /**
    * 重置状态
@@ -151,8 +162,9 @@ class Player {
       } else return null;
     }
     // 返回歌曲地址
-    // 客户端直接返回，网页端转 https
-    const url = isElectron ? songData.url : songData.url.replace(/^http:/, "https:");
+    // 客户端直接返回，网页端转 https, 并转换url以便解决音乐链接cors问题
+    const url = isElectron ? songData.url : songData.url.replace(/^http:/, "https:").replace(/m804\.music\.126\.net/g, 'm801.music.126.net').replace(/m704\.music\.126\.net/g, 'm701.music.126.net');
+    console.log(`🎧 ${id} music url:`, url);
     return url;
   }
   /**
@@ -167,12 +179,22 @@ class Player {
       const keyWord = songData.name + "-" + artist;
       if (!songId || !keyWord) return null;
       // 尝试解锁
-      const [neteaseUrl, kuwoUrl] = await Promise.all([
+      const results = await Promise.allSettled([
         unlockSongUrl(songId, keyWord, "netease"),
         unlockSongUrl(songId, keyWord, "kuwo"),
       ]);
-      if (neteaseUrl.code === 200 && neteaseUrl.url !== "") return neteaseUrl.url;
-      if (kuwoUrl.code === 200 && kuwoUrl.url !== "") return kuwoUrl.url;
+      // 解析结果
+      const [neteaseRes, kuwoRes] = results;
+      if (
+        neteaseRes.status === "fulfilled" &&
+        neteaseRes.value.code === 200 &&
+        neteaseRes.value.url
+      ) {
+        return neteaseRes.value.url;
+      }
+      if (kuwoRes.status === "fulfilled" && kuwoRes.value.code === 200 && kuwoRes.value.url) {
+        return kuwoRes.value.url;
+      }
       return null;
     } catch (error) {
       console.error("Error in getUnlockSongUrl", error);
@@ -528,7 +550,7 @@ class Player {
       statusStore.playLoading = true;
       // 本地歌曲
       if (path) {
-        await this.createPlayer(path, autoPlay, seek);
+        await this.createPlayer(`file://${path}`, autoPlay, seek);
         // 获取歌曲元信息
         await this.parseLocalMusicInfo(path);
       }
@@ -589,10 +611,11 @@ class Player {
       return;
     }
     this.player.play();
-    statusStore.playStatus = true;
     // 淡入
     await new Promise<void>((resolve) => {
       this.player.once("play", () => {
+        // 在淡入开始时立即设置播放状态
+        statusStore.playStatus = true;
         this.player.fade(0, statusStore.playVolume, this.getFadeTime());
         resolve();
       });
@@ -610,12 +633,14 @@ class Player {
       return;
     }
 
+    // 立即设置播放状态
+    if (changeStatus) statusStore.playStatus = false;
+    
     // 淡出
     await new Promise<void>((resolve) => {
       this.player.fade(statusStore.playVolume, 0, this.getFadeTime());
       this.player.once("fade", () => {
         this.player.pause();
-        if (changeStatus) statusStore.playStatus = false;
         resolve();
       });
     });
@@ -657,18 +682,14 @@ class Player {
         this.setSeek(0);
         await this.play();
       }
-      // 列表循环或处于心动模式
-      if (playSongMode === "repeat" || playHeartbeatMode || playSong.type === "radio") {
+      // 列表循环或处于心动模式或随机模式
+      if (
+        playSongMode === "repeat" ||
+        playSongMode === "shuffle" ||
+        playHeartbeatMode ||
+        playSong.type === "radio"
+      ) {
         statusStore.playIndex += type === "next" ? 1 : -1;
-      }
-      // 随机播放
-      else if (playSongMode === "shuffle") {
-        let newIndex: number;
-        // 确保不会随机到同一首
-        do {
-          newIndex = Math.floor(Math.random() * playListLength);
-        } while (newIndex === statusStore.playIndex);
-        statusStore.playIndex = newIndex;
       }
       // 单曲循环
       else if (playSongMode === "repeat-once") {
@@ -698,28 +719,65 @@ class Player {
    * 切换播放模式
    * @param mode 播放模式 repeat / repeat-once / shuffle
    */
-  togglePlayMode(mode: PlayModeType | false) {
+  async togglePlayMode(mode: PlayModeType | false) {
     const statusStore = useStatusStore();
+    const dataStore = useDataStore();
+    const musicStore = useMusicStore();
     // 退出心动模式
     if (statusStore.playHeartbeatMode) this.toggleHeartMode(false);
-    // 若传入了指定模式
+    // 计算目标模式
+    let targetMode: PlayModeType;
     if (mode) {
-      statusStore.playSongMode = mode;
+      targetMode = mode;
     } else {
       switch (statusStore.playSongMode) {
         case "repeat":
-          statusStore.playSongMode = "repeat-once";
+          targetMode = "repeat-once";
           break;
         case "shuffle":
-          statusStore.playSongMode = "repeat";
+          targetMode = "repeat";
           break;
         case "repeat-once":
-          statusStore.playSongMode = "shuffle";
+          targetMode = "shuffle";
           break;
         default:
-          statusStore.playSongMode = "repeat";
+          targetMode = "repeat";
       }
     }
+    // 进入随机模式：保存原顺序并打乱当前歌单
+    if (targetMode === "shuffle" && statusStore.playSongMode !== "shuffle") {
+      const currentList = dataStore.playList;
+      if (currentList && currentList.length > 1) {
+        const currentSongId = musicStore.playSong?.id;
+        await dataStore.setOriginalPlayList(currentList);
+        const shuffled = this.shuffleArray(currentList);
+        await dataStore.setPlayList(shuffled);
+        if (currentSongId) {
+          const newIndex = shuffled.findIndex((s: any) => s?.id === currentSongId);
+          if (newIndex !== -1) useStatusStore().playIndex = newIndex;
+        }
+      }
+    }
+    // 离开随机模式：恢复到原顺序
+    if (
+      statusStore.playSongMode === "shuffle" &&
+      (targetMode === "repeat" || targetMode === "repeat-once")
+    ) {
+      const original = await dataStore.getOriginalPlayList();
+      if (original && original.length) {
+        const currentSongId = musicStore.playSong?.id;
+        await dataStore.setPlayList(original);
+        if (currentSongId) {
+          const origIndex = original.findIndex((s: any) => s?.id === currentSongId);
+          useStatusStore().playIndex = origIndex !== -1 ? origIndex : 0;
+        } else {
+          useStatusStore().playIndex = 0;
+        }
+        await dataStore.clearOriginalPlayList();
+      }
+    }
+    // 应用模式
+    statusStore.playSongMode = targetMode;
     this.playModeSyncIpc();
   }
   /**
@@ -851,8 +909,18 @@ class Player {
     const statusStore = useStatusStore();
     // 获取配置
     const { showTip, play } = options;
+    
+    // 处理随机播放模式
+    let processedData = cloneDeep(data);
+    if (statusStore.playSongMode === "shuffle") {
+      // 保存原始播放列表
+      await dataStore.setOriginalPlayList(cloneDeep(data));
+      // 随机排序
+      processedData = this.shuffleArray(processedData);
+    }
+    
     // 更新列表
-    await dataStore.setPlayList(cloneDeep(data));
+    await dataStore.setPlayList(processedData);
     // 关闭特殊模式
     if (statusStore.playHeartbeatMode) this.toggleHeartMode(false);
     if (statusStore.personalFmMode) statusStore.personalFmMode = false;
@@ -862,15 +930,15 @@ class Player {
       if (musicStore.playSong.id === song.id) {
         if (play) await this.play();
       } else {
-        // 查找索引
-        statusStore.playIndex = data.findIndex((item) => item.id === song.id);
+        // 查找索引（在处理后的列表中查找）
+        statusStore.playIndex = processedData.findIndex((item) => item.id === song.id);
         // 播放
         await this.pause(false);
         await this.initPlayer();
       }
     } else {
       statusStore.playIndex =
-        statusStore.playSongMode === "shuffle" ? Math.floor(Math.random() * data.length) : 0;
+        statusStore.playSongMode === "shuffle" ? Math.floor(Math.random() * processedData.length) : 0;
       // 播放
       await this.pause(false);
       await this.initPlayer();
