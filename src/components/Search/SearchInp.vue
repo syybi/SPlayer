@@ -39,12 +39,13 @@
 <script setup lang="ts">
 import { useStatusStore, useDataStore, useSettingStore } from "@/stores";
 import { searchDefault } from "@/api/search";
-import SearchInpMenu from "@/components/Menu/SearchInpMenu.vue";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
 import { songDetail } from "@/api/song";
 import { formatSongsList } from "@/utils/format";
+import SearchInpMenu from "@/components/Menu/SearchInpMenu.vue";
 
 const router = useRouter();
+const player = usePlayer();
 const dataStore = useDataStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
@@ -85,6 +86,10 @@ const setSearchHistory = (keyword: string) => {
 
 // 更换搜索框关键词
 const updatePlaceholder = async () => {
+  if (!settingStore.enableSearchKeyword) {
+    searchPlaceholder.value = "搜索音乐 / 视频";
+    return;
+  }
   try {
     const result = await searchDefault();
     searchPlaceholder.value = result.data.showKeyword;
@@ -149,6 +154,11 @@ const toSearch = async (key: any, type: string = "keyword") => {
         query: { id: key?.id },
       });
       break;
+    case "share":
+      if (key?.realType && key?.id) {
+        toSearch({ id: key.id }, key.realType);
+      }
+      break;
     default:
       break;
   }
@@ -156,7 +166,7 @@ const toSearch = async (key: any, type: string = "keyword") => {
 
 onMounted(() => {
   // 每分钟更新
-  if (settingStore.useOnlineService) {
+  if (settingStore.useOnlineService && settingStore.enableSearchKeyword) {
     useIntervalFn(updatePlaceholder, 60 * 1000, { immediate: true });
   }
 });

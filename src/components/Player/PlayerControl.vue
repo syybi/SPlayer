@@ -24,6 +24,14 @@
           <div class="menu-icon" @click.stop="openDownloadSong(musicStore.playSong)">
             <SvgIcon name="Download" />
           </div>
+          <!-- 显示评论 -->
+          <div
+            v-if="!musicStore.playSong.path && !statusStore.pureLyricMode"
+            class="menu-icon"
+            @click.stop="statusStore.showPlayerComment = !statusStore.showPlayerComment"
+          >
+            <SvgIcon :depth="statusStore.showPlayerComment ? 1 : 3" name="Message" />
+          </div>
         </n-flex>
         <div class="center">
           <div class="btn">
@@ -68,62 +76,14 @@
           </div>
           <!-- 进度条 -->
           <div class="slider">
-            <span>{{ secondsToTime(statusStore.currentTime) }}</span>
-            <n-slider
-              v-model:value="statusStore.progress"
-              :step="0.01"
-              :min="0"
-              :max="100"
-              :tooltip="false"
-              :keyboard="false"
-              class="player-slider"
-              @dragstart="player.pause(false)"
-              @dragend="sliderDragend"
-            />
-            <span>{{ secondsToTime(statusStore.duration) }}</span>
+            <span>{{ msToTime(statusStore.currentTime) }}</span>
+            <PlayerSlider :show-tooltip="false" />
+            <span>{{ msToTime(statusStore.duration) }}</span>
           </div>
         </div>
         <n-flex class="right" align="center" justify="end">
-          <!-- 显示评论 -->
-          <div
-            v-if="!musicStore.playSong.path && !statusStore.pureLyricMode"
-            class="menu-icon"
-            @click.stop="statusStore.showPlayerComment = !statusStore.showPlayerComment"
-          >
-            <SvgIcon :depth="statusStore.showPlayerComment ? 1 : 3" name="Message" />
-          </div>
-          <!-- 播放模式 -->
-          <div class="menu-icon" @click.stop="player.togglePlayMode(false)">
-            <SvgIcon :name="statusStore.playModeIcon" />
-          </div>
-          <!-- 音量调节 -->
-          <n-popover :show-arrow="false" :style="{ '--main-color': statusStore.mainColor }" raw>
-            <template #trigger>
-              <div class="menu-icon" @click.stop="player.toggleMute" @wheel="player.setVolume">
-                <SvgIcon :name="statusStore.playVolumeIcon" />
-              </div>
-            </template>
-            <div class="volume-change" @wheel="player.setVolume">
-              <n-slider
-                v-model:value="statusStore.playVolume"
-                :tooltip="false"
-                :min="0"
-                :max="1"
-                :step="0.01"
-                vertical
-                @update:value="(val) => player.setVolume(val)"
-              />
-              <n-text class="slider-num">{{ statusStore.playVolumePercent }}%</n-text>
-            </div>
-          </n-popover>
-          <!-- 播放列表 -->
-          <div
-            v-if="!statusStore.personalFmMode"
-            class="menu-icon"
-            @click.stop="statusStore.playListShow = !statusStore.playListShow"
-          >
-            <SvgIcon name="PlayList" />
-          </div>
+          <!-- 功能区 -->
+          <PlayerRightMenu player />
         </n-flex>
       </div>
     </Transition>
@@ -132,23 +92,15 @@
 
 <script setup lang="ts">
 import { useMusicStore, useStatusStore, useDataStore } from "@/stores";
-import { secondsToTime, calculateCurrentTime } from "@/utils/time";
+import { msToTime } from "@/utils/time";
 import { openDownloadSong, openPlaylistAdd } from "@/utils/modal";
 import { toLikeSong } from "@/utils/auth";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
 
+const player = usePlayer();
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
-
-// 进度条拖拽结束
-const sliderDragend = () => {
-  const seek = calculateCurrentTime(statusStore.progress, statusStore.duration);
-  statusStore.playStatus = true;
-  // 调整进度
-  player.setSeek(seek);
-  player.play();
-};
 </script>
 
 <style lang="scss" scoped>
@@ -170,7 +122,7 @@ const sliderDragend = () => {
     height: 100%;
     padding: 0 30px;
     transition: opacity 0.3s;
-    .menu-icon {
+    :deep(.menu-icon) {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -182,14 +134,20 @@ const sliderDragend = () => {
       cursor: pointer;
       .n-icon {
         font-size: 24px;
-        color: rgb(var(--main-color));
+        color: rgb(var(--main-cover-color));
       }
       &:hover {
         transform: scale(1.1);
-        background-color: rgba(var(--main-color), 0.14);
+        background-color: rgba(var(--main-cover-color), 0.14);
       }
       &:active {
         transform: scale(1);
+      }
+    }
+    :deep(.n-badge-sup) {
+      background-color: rgba(var(--main-cover-color), 0.14);
+      .n-base-slot-machine {
+        color: rgb(var(--main-cover-color));
       }
     }
   }
@@ -211,18 +169,17 @@ const sliderDragend = () => {
         width: 38px;
         height: 38px;
         border-radius: 50%;
+        will-change: transform;
         transition:
-          backdrop-filter 0.3s,
           background-color 0.3s,
           transform 0.3s;
         cursor: pointer;
         .n-icon {
-          color: rgb(var(--main-color));
+          color: rgb(var(--main-cover-color));
         }
         &:hover {
           transform: scale(1.1);
-          backdrop-filter: blur(10px);
-          background-color: rgba(var(--main-color), 0.14);
+          background-color: rgba(var(--main-cover-color), 0.14);
         }
         &:active {
           transform: scale(1);
@@ -231,21 +188,21 @@ const sliderDragend = () => {
       .play-pause {
         --n-width: 44px;
         --n-height: 44px;
-        --n-color: rgba(var(--main-color), 0.14);
-        --n-color-hover: rgba(var(--main-color), 0.2);
-        --n-color-focus: rgba(var(--main-color), 0.2);
-        --n-color-pressed: rgba(var(--main-color), 0.12);
+        --n-color: rgba(var(--main-cover-color), 0.14);
+        --n-color-hover: rgba(var(--main-cover-color), 0.2);
+        --n-color-focus: rgba(var(--main-cover-color), 0.2);
+        --n-color-pressed: rgba(var(--main-cover-color), 0.12);
         backdrop-filter: blur(10px);
         margin: 0 12px;
         transition:
           background-color 0.3s,
           transform 0.3s;
         .n-icon {
-          color: rgb(var(--main-color));
+          color: rgb(var(--main-cover-color));
           transition: opacity 0.1s ease-in-out;
         }
         :deep(.n-base-loading) {
-          color: rgb(var(--main-color));
+          color: rgb(var(--main-cover-color));
         }
         &:hover {
           transform: scale(1.1);
@@ -280,28 +237,12 @@ const sliderDragend = () => {
     }
   }
 }
-// volume
-.volume-change {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 64px;
-  height: 200px;
-  padding: 12px 16px;
-  backdrop-filter: blur(10px);
-  background-color: rgba(var(--main-color), 0.14);
-  .slider-num {
-    margin-top: 4px;
-    font-size: 12px;
-    color: rgb(var(--main-color));
-  }
-}
 // slider
 .n-slider {
-  --n-rail-color: rgba(var(--main-color), 0.14);
-  --n-rail-color-hover: rgba(var(--main-color), 0.3);
-  --n-fill-color: rgb(var(--main-color));
-  --n-handle-color: rgb(var(--main-color));
-  --n-fill-color-hover: rgb(var(--main-color));
+  --n-rail-color: rgba(var(--main-cover-color), 0.14);
+  --n-rail-color-hover: rgba(var(--main-cover-color), 0.3);
+  --n-fill-color: rgb(var(--main-cover-color));
+  --n-handle-color: rgb(var(--main-cover-color));
+  --n-fill-color-hover: rgb(var(--main-cover-color));
 }
 </style>

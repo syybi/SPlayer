@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory, Router } from "vue-router";
 import { openUserLogin } from "@/utils/modal";
-import { isElectron } from "@/utils/helper";
+import { isElectron } from "@/utils/env";
 import { isLogin } from "@/utils/auth";
 import routes from "./routes";
 

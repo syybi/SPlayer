@@ -5,6 +5,7 @@
         v-if="searchCount > 0"
         :data="searchResultData"
         :loading="loading"
+        doubleClickAction="add"
         loadMore
         disabledSort
         @reachBottom="reachBottom"

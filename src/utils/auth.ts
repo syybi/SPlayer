@@ -18,9 +18,10 @@ import { logout, refreshLogin } from "@/api/login";
 import { debounce, isFunction } from "lodash-es";
 import { isBeforeSixAM } from "./time";
 import { dailyRecommend } from "@/api/rec";
-import { isElectron } from "./helper";
+import { isElectron } from "./env";
 import { likePlaylist, playlistTracks } from "@/api/playlist";
 import { likeArtist } from "@/api/artist";
+import { likeAlbum } from "@/api/album";
 import { radioSub } from "@/api/radio";
 
 /**
@@ -179,18 +180,12 @@ export const updateUserLikeAlbums = async () => {
 
 // 更新用户喜欢电台
 export const updateUserLikeDjs = async () => {
-  const dataStore = useDataStore();
-  if (!isLogin() || !dataStore.userData.userId) return;
-  const result = await userDj();
-  dataStore.setUserLikeData("djs", formatCoverList(result.djRadios));
+  await setUserLikeDataLoop(userDj, formatCoverList, "djs");
 };
 
 // 更新用户喜欢MV
 export const updateUserLikeMvs = async () => {
-  const dataStore = useDataStore();
-  if (!isLogin() || !dataStore.userData.userId) return;
-  const result = await userMv();
-  dataStore.setUserLikeData("mvs", formatCoverList(result.data));
+  await setUserLikeDataLoop(userMv, formatCoverList, "mvs");
 };
 
 // 喜欢歌曲
@@ -236,120 +231,117 @@ export const toLikeSong = debounce(
   { leading: true, trailing: false },
 );
 
+const toLikeSomething = (
+  actionName: string,
+  thingName: string,
+  request: () => (id: number, t: 1 | 2) => Promise<{ code: number }>,
+  update: () => Promise<void>,
+) =>
+  debounce(
+    async (id: number, like: boolean) => {
+      // 错误情况
+      if (!id) return;
+      if (!isLogin()) {
+        window.$message.warning("请登录后使用");
+        return;
+      }
+      if (isLogin() === 2) {
+        window.$message.warning("该登录模式暂不支持该操作");
+        return;
+      }
+      // 请求
+      const { code } = await request()(id, like ? 1 : 2);
+      if (code === 200) {
+        window.$message.success((like ? "" : "取消") + actionName + thingName + "成功");
+        // 更新
+        await update();
+      } else {
+        window.$message.success((like ? "" : "取消") + actionName + thingName + "失败，请重试");
+        return;
+      }
+    },
+    300,
+    { leading: true, trailing: false },
+  );
+
 // 收藏/取消收藏歌单
-export const toLikePlaylist = debounce(
-  async (id: number, like: boolean) => {
-    if (!id) return;
-    if (!isLogin()) {
-      window.$message.warning("请登录后使用");
-      return;
-    }
-    if (isLogin() === 2) {
-      window.$message.warning("该登录模式暂不支持该操作");
-      return;
-    }
-    const { code } = await likePlaylist(id, like ? 1 : 2);
-    if (code === 200) {
-      window.$message.success((like ? "收藏" : "取消收藏") + "歌单成功");
-      // 更新
-      await updateUserLikePlaylist();
-    } else {
-      window.$message.success((like ? "收藏" : "取消收藏") + "歌单失败，请重试");
-      return;
-    }
-  },
-  300,
-  { leading: true, trailing: false },
+export const toLikePlaylist = toLikeSomething(
+  "收藏",
+  "歌单",
+  () => likePlaylist,
+  updateUserLikePlaylist,
 );
 
+// 收藏/取消收藏专辑
+export const toLikeAlbum = toLikeSomething("收藏", "专辑", () => likeAlbum, updateUserLikeAlbums);
+
 // 收藏/取消收藏歌手
-export const toLikeArtist = debounce(
-  async (id: number, like: boolean) => {
-    if (!id) return;
-    if (!isLogin()) {
-      window.$message.warning("请登录后使用");
-      return;
-    }
-    if (isLogin() === 2) {
-      window.$message.warning("该登录模式暂不支持该操作");
-      return;
-    }
-    const { code } = await likeArtist(id, like ? 1 : 2);
-    if (code === 200) {
-      window.$message.success((like ? "收藏" : "取消收藏") + "歌手成功");
-      // 更新
-      await updateUserLikeArtists();
-    } else {
-      window.$message.success((like ? "收藏" : "取消收藏") + "歌手失败，请重试");
-      return;
-    }
-  },
-  300,
-  { leading: true, trailing: false },
+export const toLikeArtist = toLikeSomething(
+  "收藏",
+  "歌手",
+  () => likeArtist,
+  updateUserLikeArtists,
 );
 
 // 订阅/取消订阅播客
-export const toSubRadio = debounce(
-  async (id: number, like: boolean) => {
-    if (!id) return;
-    if (!isLogin()) {
-      window.$message.warning("请登录后使用");
-      return;
-    }
-    if (isLogin() === 2) {
-      window.$message.warning("该登录模式暂不支持该操作");
-      return;
-    }
-    const { code } = await radioSub(id, like ? 1 : 0);
-    if (code === 200) {
-      window.$message.success((like ? "订阅" : "取消订阅") + "播客成功");
-      // 更新
-      await updateUserLikeDjs();
-    } else {
-      window.$message.success((like ? "订阅" : "取消订阅") + "播客失败，请重试");
-      return;
-    }
-  },
-  300,
-  { leading: true, trailing: false },
-);
+export const toSubRadio = toLikeSomething("订阅", "播客", () => radioSub, updateUserLikeDjs);
 
 // 循环获取用户喜欢数据
 const setUserLikeDataLoop = async <T>(
-  apiFunction: (limit: number, offset: number) => Promise<{ data: any[]; count: number }>,
+  apiFunction: (limit: number, offset: number) => Promise<any>,
   formatFunction: (data: any[]) => T[],
   key: keyof UserLikeDataType,
 ) => {
   const dataStore = useDataStore();
   const userId = dataStore.userData.userId;
   if (!isLogin() || !userId) return;
-  // 必要数据
-  let offset: number = 0;
+
+  let offset = 0;
   const allData: T[] = [];
-  const limit: number = 100;
-  // 是否可循环
-  let canLoop: boolean = true;
-  // 循环获取
-  while (canLoop) {
-    const { data, count } = await apiFunction(limit, offset);
-    // 数据处理
-    const formattedData = formatFunction(data);
-    // 若为空
-    if (formattedData.length === 0) break;
-    // 合并数据
-    allData.push(...formattedData);
-    // 更新偏移量
-    offset += limit;
-    canLoop = offset < count && formattedData.length > 0;
+  const limit = 50; // 限制每页50条
+
+  while (true) {
+    try {
+      const result = await apiFunction(limit, offset);
+      // 根据不同 API 提取数据字段
+      let data: any[] = [];
+      if (key === "djs") {
+        data = result.djRadios || [];
+      } else if (key === "playlists") {
+        data = result.playlist || [];
+      } else {
+        data = result.data || [];
+      }
+
+      if (!Array.isArray(data) || data.length === 0) {
+        break; // 没有更多数据
+      }
+
+      // 格式化并合并数据
+      const formattedData = formatFunction(data);
+      allData.push(...formattedData);
+
+      // 数据少于分页大小，说明已是最后一页
+      if (data.length < limit) {
+        break;
+      }
+
+      offset += limit;
+    } catch (error) {
+      console.error(`Error fetching ${key} data at offset ${offset}:`, error);
+      break;
+    }
   }
-  // 更新数据
+  // 保存数据
   if (key === "artists") {
     dataStore.setUserLikeData(key, allData as ArtistType[]);
-  } else if (key === "albums" || key === "mvs" || key === "djs") {
+  } else if (key === "playlists" || key === "albums" || key === "mvs" || key === "djs") {
     dataStore.setUserLikeData(key, allData as CoverType[]);
   } else {
-    console.error(`Unsupported key: ${key}`);
+    console.error(`Unsupported key in setUserLikeDataLoop: ${key}`);
   }
+
+  console.log(`✅ Fetched ${allData.length} ${key} for user ${userId}`);
   return allData;
 };
 

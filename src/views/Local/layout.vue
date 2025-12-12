@@ -120,7 +120,7 @@
             <SvgIcon :size="20" name="Folder" />
           </template>
           <template #suffix>
-            <n-button quaternary @click="changeLocalPath(index)">
+            <n-button quaternary @click="changeLocalMusicPath(index)">
               <template #icon>
                 <SvgIcon :size="20" name="Delete" />
               </template>
@@ -131,7 +131,7 @@
       </n-list>
       <template #footer>
         <n-flex justify="center">
-          <n-button class="add-path" strong secondary @click="changeLocalPath()">
+          <n-button class="add-path" strong secondary @click="changeLocalMusicPath()">
             <template #icon>
               <SvgIcon name="FolderPlus" />
             </template>
@@ -149,15 +149,16 @@ import type { DropdownOption, MessageReactive } from "naive-ui";
 import { useLocalStore, useSettingStore } from "@/stores";
 import { formatSongsList } from "@/utils/format";
 import { uniqBy, flattenDeep, debounce } from "lodash-es";
-import { changeLocalPath, fuzzySearch, renderIcon } from "@/utils/helper";
+import { changeLocalMusicPath, fuzzySearch, renderIcon } from "@/utils/helper";
 import { openBatchList } from "@/utils/modal";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
 
 const router = useRouter();
+const player = usePlayer();
 const localStore = useLocalStore();
 const settingStore = useSettingStore();
 
-const loading = ref<boolean>(true);
+const loading = ref<boolean>(false);
 const loadingMsg = ref<MessageReactive | null>(null);
 
 // 本地歌曲总线
@@ -183,10 +184,12 @@ const listData = computed<SongType[]>(() => {
 // 获取音乐文件夹
 const getMusicFolder = async (): Promise<string[]> => {
   defaultMusicPath.value = await window.electron.ipcRenderer.invoke("get-default-dir", "music");
-  return [
+  const paths = [
     settingStore.showDefaultLocalPath ? defaultMusicPath.value : "",
     ...settingStore.localFilesPath,
   ];
+  // 过滤空路径
+  return paths.filter((p) => p && p.trim() !== "");
 };
 
 // 全部音乐大小
@@ -218,42 +221,50 @@ const moreOptions = computed<DropdownOption[]>(() => [
 // 获取全部路径歌曲
 const getAllLocalMusic = debounce(
   async (showTip: boolean = false) => {
-    // 获取路径
-    const allPath = await getMusicFolder();
-    if (!allPath || !allPath.length) return;
-    // 加载提示
-    if (showTip) {
-      loadingMsg.value = window.$message.loading("正在获取本地歌曲", {
-        duration: 0,
-      });
+    try {
+      // 获取路径
+      const allPath = await getMusicFolder();
+      if (!allPath || !allPath.length) {
+        loading.value = false;
+        return;
+      }
+      // 加载提示
+      if (showTip) {
+        loadingMsg.value = window.$message.loading("正在获取本地歌曲", {
+          duration: 0,
+        });
+      }
+      // 获取全部歌曲
+      loading.value = true;
+      const dirContentsPromises = allPath.map((path) =>
+        window.electron.ipcRenderer.invoke("get-music-files", path),
+      );
+      const results = await Promise.allSettled(dirContentsPromises);
+      const allSongData = results
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => (result as PromiseFulfilledResult<any>).value);
+      // 展平去重
+      const songData = uniqBy(flattenDeep(allSongData), "id");
+      // 处理数据
+      const listData = formatSongsList(songData);
+      // 数据是否变化
+      const oldLength = localStore.localSongs.length;
+      if (oldLength === 0 && listData.length > 0) {
+        window.$message.success(`发现 ${listData.length} 首歌曲`);
+      } else if (listData.length > oldLength) {
+        window.$message.success(`新增 ${listData.length - oldLength} 首歌曲`);
+      }
+      if (showTip) window.$message.success(`已发现 ${listData.length} 首`);
+      // 保存并更新
+      localStore.updateLocalSong(listData);
+    } catch (error) {
+      console.error("获取本地音乐失败:", error);
+      window.$message.error("获取本地音乐失败，请重试");
+    } finally {
+      loading.value = false;
+      loadingMsg.value?.destroy();
+      loadingMsg.value = null;
     }
-    // 获取全部歌曲
-    loading.value = true;
-    const dirContentsPromises = allPath.map((path) =>
-      window.electron.ipcRenderer.invoke("get-music-files", path),
-    );
-    const results = await Promise.allSettled(dirContentsPromises);
-    const allSongData = results
-      .filter((result) => result.status === "fulfilled")
-      .map((result) => (result as PromiseFulfilledResult<any>).value);
-    // 展平去重
-    const songData = uniqBy(flattenDeep(allSongData), "id");
-    // 处理数据
-    const listData = formatSongsList(songData);
-    // 数据是否变化
-    const oldLength = localStore.localSongs.length;
-    if (oldLength === 0 && listData.length > 0) {
-      window.$message.success(`发现 ${listData.length} 首歌曲`);
-    } else if (listData.length > oldLength) {
-      window.$message.success(`新增 ${listData.length - oldLength} 首歌曲`);
-    }
-    if (showTip) window.$message.success(`已发现 ${listData.length} 首`);
-    // 保存并更新
-    localStore.updateLocalSong(listData);
-    // 关闭加载
-    loading.value = false;
-    loadingMsg.value?.destroy();
-    loadingMsg.value = null;
   },
   300,
   { leading: true, trailing: false },

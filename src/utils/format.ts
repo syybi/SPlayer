@@ -1,6 +1,7 @@
-import type { SongType, CoverType, ArtistType, CommentType, MetaData, CatType } from "@/types/main";
+import { SongType, CoverType, ArtistType, CommentType, MetaData, CatType } from "@/types/main";
 import { msToTime } from "./time";
 import { flatMap, isArray, uniqBy } from "lodash-es";
+import { handleSongQuality } from "./helper";
 
 type CoverDataType = {
   cover: string;
@@ -12,7 +13,11 @@ type CoverDataType = {
   };
 };
 
-// 格式化歌曲列表
+/**
+ * 格式化歌曲列表
+ * @param data 歌曲数据
+ * @returns 格式化后的歌曲列表
+ */
 export const formatSongsList = (data: any[]): SongType[] => {
   if (!data) return [];
   data = isArray(data) ? data : [data];
@@ -63,7 +68,9 @@ export const formatSongsList = (data: any[]): SongType[] => {
       size: Number(item.size || 0),
       path: item.path,
       pc: !!item.pc,
-      quality: item?.quality,
+      quality: item?.path
+        ? handleSongQuality(item.quality, "local")
+        : handleSongQuality(item, "online"),
       playCount: Number(item.playCount || item.listenerCount || 0),
       createTime: Number(item.createTime || item.publishTime) || undefined,
       updateTime: Number(item.lastProgramCreateTime || item.scheduledPublishTime) || undefined,
@@ -72,7 +79,11 @@ export const formatSongsList = (data: any[]): SongType[] => {
   });
 };
 
-// 格式化封面列表
+/**
+ * 格式化封面列表
+ * @param data 封面数据
+ * @returns 格式化后的封面列表
+ */
 export const formatCoverList = (data: any[]): CoverType[] => {
   if (!data) return [];
   data = isArray(data) ? data : [data];
@@ -128,7 +139,11 @@ export const formatCoverList = (data: any[]): CoverType[] => {
   });
 };
 
-// 格式化歌手列表
+/**
+ * 格式化歌手列表
+ * @param data 歌手数据
+ * @returns 格式化后的歌手列表
+ */
 export const formatArtistsList = (data: any[]): ArtistType[] => {
   if (!data) return [];
   data = isArray(data) ? data : [data];
@@ -146,7 +161,11 @@ export const formatArtistsList = (data: any[]): ArtistType[] => {
   }));
 };
 
-// 格式化评论列表
+/**
+ * 格式化评论列表
+ * @param data 评论数据
+ * @returns 格式化后的评论列表
+ */
 export const formatCommentList = (data: any[]): CommentType[] => {
   data = isArray(data) ? data : [data];
   return data.map((item) => ({
@@ -184,7 +203,11 @@ export const formatCommentList = (data: any[]): CommentType[] => {
   }));
 };
 
-// 格式化分类列表
+/**
+ * 格式化分类列表
+ * @param data 分类数据
+ * @returns 格式化后的分类列表
+ */
 export const formatCategoryList = (data: any[]): CatType[] => {
   data = isArray(data) ? data : [data];
   return data.map((item) => ({
@@ -195,7 +218,11 @@ export const formatCategoryList = (data: any[]): CatType[] => {
   }));
 };
 
-// 获取图片的 url
+/**
+ * 获取封面图片 URL
+ * @param item 封面数据项
+ * @returns 格式化后的封面数据
+ */
 const getCoverUrl = (item: any): CoverDataType => {
   const cover =
     item.cover ||
@@ -215,7 +242,12 @@ const getCoverUrl = (item: any): CoverDataType => {
   return { cover, coverSize };
 };
 
-// 获取图片不同尺寸
+/**
+ * 获取封面图片不同尺寸 URL
+ * @param url 封面图片 URL
+ * @param size 尺寸参数（可选）
+ * @returns 格式化后的封面图片 URL
+ */
 const getCoverSizeUrl = (url: string, size: number | null = null) => {
   try {
     if (!url) return "/images/song.jpg?assest";
@@ -237,4 +269,18 @@ const getCoverSizeUrl = (url: string, size: number | null = null) => {
     console.error("图片链接处理出错：", error);
     return "/images/song.jpg?assest";
   }
+};
+
+/**
+ * 检测歌词语言
+ * @param lyric 歌词内容
+ * @returns 语言代码（"ja" | "zh-CN" | "en"）
+ */
+export const getLyricLanguage = (lyric: string): string => {
+  // 判断日语 根据平假名和片假名
+  if (/[\u3040-\u309f\u30a0-\u30ff]/.test(lyric)) return "ja";
+  // 判断简体中文 根据中日韩统一表意文字基本区
+  if (/[\u4e00-\u9fa5]/.test(lyric)) return "zh-CN";
+  // 默认英语
+  return "en";
 };

@@ -80,12 +80,32 @@ const openDropdown = async (
           type: "divider",
         },
         {
-          key: "copy",
-          label: "复制链接",
+          key: "code-name",
+          label: `复制${type === "playlist" ? "歌单" : type === "album" ? "专辑" : type === "video" ? "视频" : "电台"}名称`,
           props: {
-            onClick: () => copyData(`https://music.163.com/#/${type}?id=${item.id}`),
+            onClick: () => copyData(item.name),
           },
-          icon: renderIcon("Link"),
+          icon: renderIcon("Copy", { size: 18 }),
+        },
+        {
+          key: "code-id",
+          label: `复制${type === "playlist" ? "歌单" : type === "album" ? "专辑" : type === "video" ? "视频" : "电台"} ID`,
+          props: {
+            onClick: () => copyData(item.id),
+          },
+          icon: renderIcon("Copy", { size: 18 }),
+        },
+        {
+          key: "share",
+          label: `分享${type === "playlist" ? "歌单" : type === "album" ? "专辑" : type === "video" ? "视频" : "电台"}链接`,
+          props: {
+            onClick: () =>
+              copyData(
+                `https://music.163.com/#/${type}?id=${item.id}`,
+                "已复制分享链接到剪贴板",
+              ),
+          },
+          icon: renderIcon("Share", { size: 18 }),
         },
       ];
       // 显示菜单

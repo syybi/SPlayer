@@ -17,6 +17,8 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "types": ["node", "electron", "electron-vite/node", "./auto-imports.d.ts", "./components.d.ts"]
+    "types": ["node", "electron", "electron-vite/node", "./auto-imports.d.ts", "./components.d.ts"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "target": "es2022"
   }
 }

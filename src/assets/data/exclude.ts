@@ -66,12 +66,13 @@ export const keywords = [
   "缩混",
   "音乐总监",
   "音乐制作",
-  "OP",
-  "SP",
-  "op",
-  "sp",
   "Talkbox",
   "Producers",
   "Producer",
   "Produced",
 ];
+
+export const regexes = [
+  /^[Oo][Pp]\s*[:：]/,
+  /^[Ss][Pp]\s*[:：]/,
+].map((regex) => regex.source);

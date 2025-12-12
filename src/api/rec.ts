@@ -13,6 +13,16 @@ export const dailyRecommend = (type: "songs" | "resource" = "songs") => {
 };
 
 /**
+ * 每日推荐 - 不感兴趣
+ */
+export const dailyRecommendDislike = (id: number) => {
+  return request({
+    url: "/recommend/songs/dislike",
+    params: { id, timestamp: Date.now() },
+  });
+};
+
+/**
  * 推荐内容
  * @param {string} [type] - 推荐类型
  * @param {number} [limit=50] - 返回结果的数量

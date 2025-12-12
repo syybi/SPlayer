@@ -1,4 +1,7 @@
-import { songLevelData } from "@/utils/meta";
+import { isElectron } from "@/utils/env";
+import { defaultAMLLDbServer, songLevelData } from "@/utils/meta";
+import { SongUnlockServer } from "@/utils/songManager";
+import { useSettingStore } from "@/stores";
 import request from "@/utils/request";
 
 // 获取歌曲详情
@@ -46,12 +49,12 @@ export const songUrl = (
 };
 
 // 获取解锁歌曲 URL
-export const unlockSongUrl = (id: number, keyword: string, server: "netease" | "kuwo") => {
-  const params = server === "netease" ? { id } : { keyword };
+export const unlockSongUrl = (id: number, keyword: string, server: SongUnlockServer) => {
+  const params = server === SongUnlockServer.NETEASE ? { id } : { keyword };
   return request({
     baseURL: "/api/unblock",
     url: `/${server}`,
-    params,
+    params: { ...params, noCookie: true },
   });
 };
 
@@ -63,6 +66,31 @@ export const songLyric = (id: number) => {
       id,
     },
   });
+};
+
+/**
+ * 获取歌曲 TTML 歌词
+ * @param id 音乐 id
+ * @returns TTML 格式歌词
+ */
+export const songLyricTTML = async (id: number) => {
+  if (isElectron) {
+    return request({ url: "/lyric/ttml", params: { id, noCookie: true } });
+  } else {
+    const settingStore = useSettingStore();
+    const server = settingStore.amllDbServer || defaultAMLLDbServer;
+    const url = server.replace("%s", String(id));
+    try {
+      const response = await fetch(url);
+      if (response === null || response.status !== 200) {
+        return null;
+      }
+      const data = await response.text();
+      return data;
+    } catch {
+      return null;
+    }
+  }
 };
 
 /**

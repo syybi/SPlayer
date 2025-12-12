@@ -18,6 +18,13 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">下一首歌曲预载</n-text>
+          <n-text class="tip" :depth="3">提前预加载下一首歌曲的播放地址，提升切换速度</n-text>
+        </div>
+        <n-switch v-model:value="settingStore.useNextPrefetch" class="set" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">记忆上次播放位置</n-text>
           <n-text class="tip" :depth="3">程序启动时恢复上次播放位置</n-text>
         </div>
@@ -68,13 +75,6 @@
       </n-card>
       <n-card v-if="isElectron" class="set-item">
         <div class="label">
-          <n-text class="name">音乐解锁</n-text>
-          <n-text class="tip" :depth="3">在无法正常播放时进行替换，可能会与原曲不符</n-text>
-        </div>
-        <n-switch v-model:value="settingStore.useSongUnlock" class="set" :round="false" />
-      </n-card>
-      <n-card v-if="isElectron" class="set-item">
-        <div class="label">
           <n-text class="name">音频输出设备</n-text>
           <n-text class="tip" :depth="3">新增或移除音频设备后请重新打开设置</n-text>
         </div>
@@ -85,6 +85,35 @@
           :render-option="renderOption"
           @update:value="playDeviceChange"
         />
+      </n-card>
+    </div>
+    <div v-if="isElectron" class="set-list">
+      <n-h3 prefix="bar">
+        音乐解锁
+        <n-tag type="warning" size="small" round>Beta</n-tag>
+      </n-h3>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">音乐解锁</n-text>
+          <n-text class="tip" :depth="3"> 在无法正常播放时进行替换，可能会与原曲不符 </n-text>
+        </div>
+        <n-switch v-model:value="settingStore.useSongUnlock" class="set" :round="false" />
+      </n-card>
+      <!-- 音源配置 -->
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">音源配置</n-text>
+          <n-text class="tip" :depth="3"> 配置歌曲解锁的音源顺序或是否启用 </n-text>
+        </div>
+        <n-button
+          :disabled="!settingStore.useSongUnlock"
+          type="primary"
+          strong
+          secondary
+          @click="openSongUnlockManager"
+        >
+          配置
+        </n-button>
       </n-card>
     </div>
     <div class="set-list">
@@ -119,7 +148,6 @@
           :options="[
             {
               label: '流体效果',
-              disabled: true,
               value: 'animation',
             },
             {
@@ -128,25 +156,42 @@
             },
             {
               label: '封面主色',
-              disabled: true,
               value: 'color',
-            },
-            {
-              label: '无背景',
-              disabled: true,
-              value: 'none',
             },
           ]"
           class="set"
         />
       </n-card>
-      <n-card class="set-item">
-        <div class="label">
-          <n-text class="name">全屏播放器留存</n-text>
-          <n-text class="tip" :depth="3">在播放器收起时是否销毁，开启将会增大内存占用</n-text>
-        </div>
-        <n-switch v-model:value="settingStore.fullPlayerCache" class="set" :round="false" />
-      </n-card>
+      <n-collapse-transition :show="settingStore.playerBackgroundType === 'animation'">
+        <n-card class="set-item">
+          <div class="label">
+            <n-text class="name">背景动画帧率</n-text>
+            <n-text class="tip" :depth="3">单位 fps，最小 24，最大 240</n-text>
+          </div>
+          <n-input-number
+            v-model:value="settingStore.playerBackgroundFps"
+            :min="24"
+            :max="256"
+            :show-button="false"
+            class="set"
+            placeholder="请输入背景动画帧率"
+          />
+        </n-card>
+        <n-card class="set-item">
+          <div class="label">
+            <n-text class="name">背景动画流动速度</n-text>
+            <n-text class="tip" :depth="3">单位 倍数，最小 0.1，最大 10</n-text>
+          </div>
+          <n-input-number
+            v-model:value="settingStore.playerBackgroundFlowSpeed"
+            :min="0.1"
+            :max="10"
+            :show-button="false"
+            class="set"
+            placeholder="请输入背景动画流动速度"
+          />
+        </n-card>
+      </n-collapse-transition>
       <n-card class="set-item">
         <div class="label">
           <n-text class="name">显示前奏倒计时</n-text>
@@ -160,6 +205,20 @@
           <n-text class="tip" :depth="3">在播放时将歌手信息更改为歌词</n-text>
         </div>
         <n-switch v-model:value="settingStore.barLyricShow" class="set" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">播放器元素自动隐藏</n-text>
+          <n-text class="tip" :depth="3">鼠标静止一段时间或者离开播放器时自动隐藏控制元素</n-text>
+        </div>
+        <n-switch v-model:value="settingStore.autoHidePlayerMeta" class="set" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">展示播放状态信息</n-text>
+          <n-text class="tip" :depth="3">展示当前歌曲及歌词的状态信息</n-text>
+        </div>
+        <n-switch v-model:value="settingStore.showPlayMeta" class="set" :round="false" />
       </n-card>
       <n-card class="set-item">
         <div class="label">
@@ -179,15 +238,11 @@
           class="set"
         />
       </n-card>
-      <n-card class="set-item">
+      <n-card v-if="isElectron" class="set-item">
         <div class="label">
           <n-text class="name">音乐频谱</n-text>
           <n-text class="tip" :depth="3">
-            {{
-              isElectron
-                ? "开启音乐频谱会影响性能或音频输出切换等功能，如遇问题请关闭"
-                : "开启可能会造成无法播放或其他问题，如遇任何问题请关闭"
-            }}
+            开启音乐频谱会影响性能或增加内存占用，如遇问题请关闭
           </n-text>
         </div>
         <n-switch
@@ -207,18 +262,6 @@
         </div>
         <n-switch v-model:value="settingStore.smtcOpen" class="set" :round="false" />
       </n-card>
-      <n-card class="set-item">
-        <div class="label">
-          <n-text class="name">输出高清封面</n-text>
-          <n-text class="tip" :depth="3">开启 SMTC 时是否输出高清封面</n-text>
-        </div>
-        <n-switch
-          v-model:value="settingStore.smtcOutputHighQualityCover"
-          class="set"
-          :round="false"
-          :disabled="!settingStore.smtcOpen || true"
-        />
-      </n-card>
     </div>
   </div>
 </template>
@@ -227,10 +270,13 @@
 import type { SelectOption } from "naive-ui";
 import { useSettingStore } from "@/stores";
 import { isLogin } from "@/utils/auth";
-import { isElectron, renderOption } from "@/utils/helper";
+import { renderOption } from "@/utils/helper";
+import { isElectron } from "@/utils/env";
 import { uniqBy } from "lodash";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
+import { openSongUnlockManager } from "@/utils/modal";
 
+const player = usePlayer();
 const settingStore = useSettingStore();
 
 // 输出设备数据
@@ -310,51 +356,53 @@ const getOutputDevices = async () => {
 
 // 切换输出设备
 const playDeviceChange = (deviceId: string, option: SelectOption) => {
-  if (settingStore.showSpectrums) {
-    window.$dialog.warning({
-      title: "音频通道占用",
-      content:
-        "由于系统限制，切换音频输出设备会导致音乐频谱失效，将会关闭音乐频谱，并将于热重载后生效（ 请点击右上角的设置菜单中的热重载按钮 ），是否继续？",
-      positiveText: "继续",
-      negativeText: "取消",
-      closeOnEsc: false,
-      closable: false,
-      maskClosable: false,
-      autoFocus: false,
-      onPositiveClick: () => {
-        showSpectrums.value = false;
-        settingStore.showSpectrums = false;
-        player.toggleOutputDevice(deviceId);
-        window.$message.success(`已切换输出设备为 ${option.label}`);
-      },
-      onNegativeClick: () => {
-        settingStore.playDevice = "default";
-      },
-    });
-  } else {
-    player.toggleOutputDevice(deviceId);
-    window.$message.success(`已切换输出设备为 ${option.label}`);
-  }
+  // if (settingStore.showSpectrums) {
+  //   window.$dialog.warning({
+  //     title: "音频通道占用",
+  //     content:
+  //       "由于系统限制，切换音频输出设备会导致音乐频谱失效，将会关闭音乐频谱，并将于热重载后生效（ 请点击右上角的设置菜单中的热重载按钮 ），是否继续？",
+  //     positiveText: "继续",
+  //     negativeText: "取消",
+  //     closeOnEsc: false,
+  //     closable: false,
+  //     maskClosable: false,
+  //     autoFocus: false,
+  //     onPositiveClick: () => {
+  //       showSpectrums.value = false;
+  //       settingStore.showSpectrums = false;
+  //       player.toggleOutputDevice(deviceId);
+  //       window.$message.success(`已切换输出设备为 ${option.label}`);
+  //     },
+  //     onNegativeClick: () => {
+  //       settingStore.playDevice = "default";
+  //     },
+  //   });
+  // } else {
+  //   player.toggleOutputDevice(deviceId);
+  //   window.$message.success(`已切换输出设备为 ${option.label}`);
+  // }
+  player.toggleOutputDevice(deviceId);
+  window.$message.success(`已切换输出设备为 ${option.label}`);
 };
 
 // 显示音乐频谱更改
 const showSpectrumsChange = (value: boolean) => {
   if (value) {
-    if (settingStore.playDevice !== "default") {
-      window.$dialog.warning({
-        title: "音频通道占用",
-        content: "开启音乐频谱会导致自定义音频输出设备失效，将会恢复默认输出设备，是否继续开启？",
-        positiveText: "开启",
-        negativeText: "取消",
-        onPositiveClick: () => {
-          showSpectrums.value = true;
-          settingStore.showSpectrums = true;
-          settingStore.playDevice = "default";
-          player.toggleOutputDevice("default");
-        },
-      });
-      return;
-    }
+    // if (settingStore.playDevice !== "default") {
+    //   window.$dialog.warning({
+    //     title: "音频通道占用",
+    //     content: "开启音乐频谱会导致自定义音频输出设备失效，将会恢复默认输出设备，是否继续开启？",
+    //     positiveText: "开启",
+    //     negativeText: "取消",
+    //     onPositiveClick: () => {
+    //       showSpectrums.value = true;
+    //       settingStore.showSpectrums = true;
+    //       settingStore.playDevice = "default";
+    //       player.toggleOutputDevice("default");
+    //     },
+    //   });
+    //   return;
+    // }
     showSpectrums.value = true;
     settingStore.showSpectrums = true;
   } else {

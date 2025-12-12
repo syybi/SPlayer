@@ -121,8 +121,8 @@ import { formatSongsList } from "@/utils/format";
 import { songDetail } from "@/api/song";
 import { playlistAllSongs } from "@/api/playlist";
 import { radioAllProgram } from "@/api/radio";
+import { usePlayer } from "@/utils/player";
 import CoverMenu from "@/components/Menu/CoverMenu.vue";
-import player from "@/utils/player";
 import { formatTimestamp } from "@/utils/time";
 
 interface Props {
@@ -145,6 +145,7 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const player = usePlayer();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 

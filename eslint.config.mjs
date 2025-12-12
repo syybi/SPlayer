@@ -26,11 +26,7 @@ export default [
       "**/components.d.ts",
     ],
   },
-  ...compat.extends(
-    "eslint:recommended",
-    "plugin:@typescript-eslint/recommended",
-    "plugin:vue/vue3-essential",
-  ),
+  ...compat.extends("eslint:recommended", "plugin:@typescript-eslint/recommended"),
   {
     plugins: {
       "@typescript-eslint": typescriptEslint,

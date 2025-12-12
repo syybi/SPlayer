@@ -81,20 +81,24 @@ export const userArtist = (limit: number = 50, offset: number = 0) => {
 };
 
 // 获取用户收藏 MV
-export const userMv = () => {
+export const userMv = (limit: number = 50, offset: number = 0) => {
   return request({
     url: "/mv/sublist",
     params: {
+      limit,
+      offset,
       timestamp: Date.now(),
     },
   });
 };
 
 // 获取用户收藏电台
-export const userDj = () => {
+export const userDj = (limit: number = 50, offset: number = 0) => {
   return request({
     url: "/dj/sublist",
     params: {
+      limit,
+      offset,
       timestamp: Date.now(),
     },
   });

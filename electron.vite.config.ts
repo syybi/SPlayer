@@ -6,6 +6,7 @@ import vue from "@vitejs/plugin-vue";
 import AutoImport from "unplugin-auto-import/vite";
 import Components from "unplugin-vue-components/vite";
 import viteCompression from "vite-plugin-compression";
+// import VueDevTools from "vite-plugin-vue-devtools";
 import wasm from "vite-plugin-wasm";
 
 export default defineConfig(({ command, mode }) => {
@@ -28,7 +29,6 @@ export default defineConfig(({ command, mode }) => {
           input: {
             index: resolve(__dirname, "electron/main/index.ts"),
             lyric: resolve(__dirname, "web/lyric.html"),
-            loading: resolve(__dirname, "web/loading.html"),
           },
         },
       },
@@ -49,6 +49,7 @@ export default defineConfig(({ command, mode }) => {
       root: ".",
       plugins: [
         vue(),
+        // mode === "development" && VueDevTools(),
         AutoImport({
           imports: [
             "vue",
@@ -88,7 +89,7 @@ export default defineConfig(({ command, mode }) => {
           "/api": {
             target: `http://127.0.0.1:${servePort}`,
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api/, "/api/"),
+            rewrite: (path) => path.replace(/^\/api/, "/api"),
           },
         },
       },
@@ -101,6 +102,7 @@ export default defineConfig(({ command, mode }) => {
         rollupOptions: {
           input: {
             index: resolve(__dirname, "index.html"),
+            loading: resolve(__dirname, "web/loading/index.html"),
           },
           output: {
             manualChunks: {

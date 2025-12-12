@@ -6,7 +6,8 @@
         <n-flex align="center" class="about">
           <SvgIcon name="SPlayer" size="26" />
           <n-text class="logo-name">SPlayer</n-text>
-          <n-tag :bordered="false" size="small" type="primary">
+          <n-tag v-if="isDevBuild" size="small" type="warning" round> DEV </n-tag>
+          <n-tag :bordered="false" size="small" type="primary" round>
             {{ packageJson.version }}
           </n-tag>
         </n-flex>
@@ -37,6 +38,40 @@
       </n-collapse-transition>
     </div>
     <div class="set-list">
+      <n-h3 prefix="bar"> 特别鸣谢 </n-h3>
+      <n-flex :size="12" class="link">
+        <n-card
+          v-for="(item, index) in contributors"
+          :key="index"
+          class="link-item"
+          hoverable
+          @click="openLink(item.url)"
+        >
+          <n-flex vertical :gap="4">
+            <n-text class="name" strong> {{ item.name }} </n-text>
+            <n-text class="tip" :depth="3" style="font-size: 12px">
+              {{ item.description }}
+            </n-text>
+          </n-flex>
+        </n-card>
+      </n-flex>
+    </div>
+    <div class="set-list">
+      <n-h3 prefix="bar"> 社区与资讯 </n-h3>
+      <n-flex :size="12" class="link">
+        <n-card
+          v-for="(item, index) in communityData"
+          :key="index"
+          class="link-item"
+          hoverable
+          @click="openLink(item.url)"
+        >
+          <SvgIcon :name="item.icon" :size="26" />
+          <n-text class="name"> {{ item.name }} </n-text>
+        </n-card>
+      </n-flex>
+    </div>
+    <div class="set-list">
       <n-h3 prefix="bar"> 历史版本 </n-h3>
       <n-collapse-transition :show="oldVersion?.length > 0">
         <n-collapse accordion>
@@ -59,35 +94,56 @@
         </n-collapse>
       </n-collapse-transition>
     </div>
-    <div class="set-list">
-      <n-h3 prefix="bar"> 社区与资讯 </n-h3>
-      <n-flex class="link">
-        <n-card
-          v-for="(item, index) in communityData"
-          :key="index"
-          class="link-item"
-          hoverable
-          @click="openLink(item.url)"
-        >
-          <SvgIcon :name="item.icon" :size="26" />
-          <n-text class="name"> {{ item.name }} </n-text>
-        </n-card>
-      </n-flex>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { UpdateLogType } from "@/types/main";
-import { getUpdateLog, isElectron, openLink } from "@/utils/helper";
+import { getUpdateLog, openLink } from "@/utils/helper";
 import { debounce } from "lodash-es";
 import { useStatusStore } from "@/stores";
 import packageJson from "@/../package.json";
+import { isDevBuild, isElectron } from "@/utils/env";
 
 const statusStore = useStatusStore();
 
+// 特别鸣谢
+const contributors = [
+  {
+    name: "NeteaseCloudMusicApi",
+    url: "https://github.com/Binaryify/NeteaseCloudMusicApi",
+    description: "网易云音乐 API",
+  },
+  // https://github.com/neteasecloudmusicapienhanced/api-enhanced
+  {
+    name: "NeteaseCloudMusicApiEnhanced",
+    url: "https://github.com/neteasecloudmusicapienhanced/api-enhanced",
+    description: "网易云音乐 API 备份 + 增强",
+  },
+  {
+    name: "YesPlayMusic",
+    url: "https://github.com/qier222/YesPlayMusic",
+    description: "高颜值的第三方网易云播放器",
+  },
+  {
+    name: "UnblockNeteaseMusic",
+    url: "https://github.com/UnblockNeteaseMusic/server",
+    description: "Revive unavailable songs for Netease Cloud Music",
+  },
+  {
+    name: "applemusic-like-lyrics",
+    url: "https://github.com/Steve-xmh/applemusic-like-lyrics",
+    description: "类 Apple Music 歌词显示组件库",
+  },
+];
+
 // 社区数据
 const communityData = [
+  {
+    name: "加入交流群",
+    url: "https://qm.qq.com/cgi-bin/qm/qr?k=2-cVSf1bE0AvAehCib00qFEFdUvPaJ_k&jump_from=webapi&authKey=1NEhib9+GsmsXVo2rCc0IbRaVHeeRXJJ0gbsyKDcIwDdAzYySOubkFCvkV32+7Cw",
+    icon: "QQ",
+  },
   {
     name: "GitHub",
     url: packageJson.github,
@@ -168,19 +224,17 @@ onMounted(getUpdateData);
     }
   }
 }
-.link {
-  .link-item {
-    max-width: 200px;
-    border-radius: 8px;
-    cursor: pointer;
-    :deep(.n-card__content) {
-      display: flex;
-      align-items: center;
-      padding: 12px;
-    }
-    .n-icon {
-      margin-right: 6px;
-    }
+.link-item {
+  max-width: 200px;
+  border-radius: 8px;
+  cursor: pointer;
+  :deep(.n-card__content) {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+  }
+  .n-icon {
+    margin-right: 6px;
   }
 }
 </style>

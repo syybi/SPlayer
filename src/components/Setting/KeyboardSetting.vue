@@ -18,9 +18,14 @@
       </n-card>
     </div>
     <div class="set-list">
-      <n-h3 prefix="bar"> 快捷键更改 </n-h3>
+      <n-h3 prefix="bar"> 全局快捷键更改 </n-h3>
       <n-card id="shortcut-list" class="set-item">
-        <n-list v-for="(item, key, index) in shortcutList" :key="index" class="shortcut" hoverable>
+        <n-list
+          v-for="(item, key, index) in globalShortcutList"
+          :key="index"
+          class="shortcut"
+          hoverable
+        >
           <n-list-item>
             <template #prefix>
               <n-text class="name">{{ item.name }}</n-text>
@@ -39,7 +44,7 @@
                 <n-input
                   :value="item.globalShortcut"
                   :disabled="!shortcutStore.globalOpen"
-                  :status="item?.isRegistered ? 'error' : 'success'"
+                  :status="item.globalShortcut && item?.isRegistered ? 'error' : undefined"
                   placeholder="快捷键为空"
                   readonly
                   @focus="inputFocus(key, true)"
@@ -58,9 +63,37 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
-          <n-text class="name">恢复默认</n-text>
+          <n-text class="name">恢复全局默认</n-text>
         </div>
         <n-button type="primary" strong secondary @click="resetShortcut"> 恢复默认 </n-button>
+      </n-card>
+    </div>
+    <div class="set-list">
+      <n-h3 prefix="bar"> 页面内快捷键 </n-h3>
+      <n-card id="page-shortcut-list" class="set-item">
+        <n-list
+          v-for="(item, key, index) in pageShortcutList"
+          :key="index"
+          class="shortcut"
+          hoverable
+        >
+          <n-list-item>
+            <template #prefix>
+              <n-text class="name">{{ item.name }}</n-text>
+            </template>
+            <n-thing>
+              <n-input
+                :value="item.shortcut"
+                placeholder="快捷键为空"
+                readonly
+                @focus="inputFocus(key)"
+                @blur="inputBlur"
+                @keydown.stop="inputKeyDown"
+                @keyup="keyHandled = ''"
+              />
+            </n-thing>
+          </n-list-item>
+        </n-list>
       </n-card>
     </div>
   </div>
@@ -82,6 +115,34 @@ const keyHandled = ref<string>("");
 
 // 快捷键列表
 const shortcutList = ref(cloneDeep(shortcutStore.shortcutList));
+
+// 全局快捷键列表（排除页面内快捷键）
+const globalShortcutList = computed(() => {
+  const pageShortcutKeys = ["openPlayer", "openPlayList", "closePlayer"];
+  return Object.entries(shortcutList.value)
+    .filter(([key]) => !pageShortcutKeys.includes(key))
+    .reduce(
+      (acc, [key, value]) => {
+        acc[key] = value;
+        return acc;
+      },
+      {} as Record<string, (typeof shortcutList.value)[keyof typeof shortcutList.value]>,
+    );
+});
+
+// 页面内快捷键列表
+const pageShortcutList = computed(() => {
+  const pageShortcutKeys = ["openPlayer", "openPlayList", "closePlayer"];
+  return Object.entries(shortcutList.value)
+    .filter(([key]) => pageShortcutKeys.includes(key))
+    .reduce(
+      (acc, [key, value]) => {
+        acc[key] = value;
+        return acc;
+      },
+      {} as Record<string, (typeof shortcutList.value)[keyof typeof shortcutList.value]>,
+    );
+});
 
 // 获取按下的快捷键
 const getShortcut = (e: KeyboardEvent): string => {
@@ -142,6 +203,8 @@ const getShortcut = (e: KeyboardEvent): string => {
     "ArrowUp",
     "ArrowRight",
     "ArrowDown",
+    // Escape 键
+    "Escape",
   ];
   if (!allowedCodes.includes(e.code)) return "";
   return e.code;
@@ -157,8 +220,12 @@ const inputFocus = (type: string, isGlobal: boolean = false) => {
 };
 
 // 失去焦点
-const inputBlur = () => {
-  if (selectShortcut.value) shortcutStore.registerAllShortcuts();
+const inputBlur = async () => {
+  if (selectShortcut.value) {
+    await shortcutStore.registerAllShortcuts();
+    // 重新检查所有全局快捷键占用状态
+    await checkAllGlobalShortcuts();
+  }
   selectShortcut.value = null;
   selectGlobal.value = false;
 };
@@ -199,9 +266,15 @@ const inputKeyDown = async (e: KeyboardEvent) => {
       // 先更改
       shortcutList.value[selectShortcut.value].globalShortcut = globalShortcut;
       // 是否被占用
-      await checkRegistered(globalShortcut);
+      const isRegistered = await checkRegistered(globalShortcut);
+      if (isRegistered) {
+        window.$message.warning("快捷键已被占用");
+      } else {
+        window.$message.success("快捷键设置成功");
+      }
       changeShortcut(globalShortcut);
     } else {
+      // 页面内快捷键或全局快捷键的页面内部分
       changeShortcut(shortcut);
       window.$message.success("快捷键设置成功");
     }
@@ -226,28 +299,53 @@ const isRepeat = (shortcut: string): boolean => {
 };
 
 // 是否被占用
-const checkRegistered = debounce(async (shortcut: string) => {
+const checkRegistered = debounce(async (shortcut: string, shortcutKey?: string) => {
   try {
-    if (!shortcut || !selectShortcut.value) return;
+    if (!shortcut) return false;
+    const targetKey = shortcutKey || selectShortcut.value;
+    if (!targetKey) return false;
     const isRegistered = await window.electron.ipcRenderer.invoke(
       "is-shortcut-registered",
       formatForGlobalShortcut(shortcut),
     );
-    if (isRegistered) window.$message.warning("快捷键已被占用");
     // 更新状态
-    shortcutList.value[selectShortcut.value].isRegistered = isRegistered;
+    shortcutList.value[targetKey].isRegistered = isRegistered;
+    return isRegistered;
   } catch (error) {
     console.error("Error checking shortcut registration:", error);
     window.$message.error("快捷键检查出现错误");
-    changeShortcut("");
+    if (selectShortcut.value) {
+      changeShortcut("");
+    }
+    return false;
   }
 }, 500);
 
+// 检查所有全局快捷键占用状态
+const checkAllGlobalShortcuts = async () => {
+  if (!shortcutStore.globalOpen) return;
+  for (const key in shortcutList.value) {
+    const item = shortcutList.value[key];
+    if (item.globalShortcut) {
+      await checkRegistered(item.globalShortcut, key);
+    }
+  }
+};
+
 // 开关全局快捷键
-const updateGlobalOpen = (val: boolean) => {
-  if(val) shortcutStore.registerAllShortcuts();
-  else window.electron.ipcRenderer.send("unregister-all-shortcut");
-}
+const updateGlobalOpen = async (val: boolean) => {
+  if (val) {
+    await shortcutStore.registerAllShortcuts();
+    // 重新检查所有全局快捷键占用状态
+    await checkAllGlobalShortcuts();
+  } else {
+    window.electron.ipcRenderer.send("unregister-all-shortcut");
+    // 清除所有占用状态
+    for (const key in shortcutList.value) {
+      shortcutList.value[key].isRegistered = false;
+    }
+  }
+};
 
 // 重置快捷键
 const resetShortcut = () => {
@@ -264,13 +362,16 @@ const resetShortcut = () => {
   });
 };
 
-onMounted(() => {
+onMounted(async () => {
   shortcutStore.registerAllShortcuts();
+  // 检查所有全局快捷键占用状态
+  await checkAllGlobalShortcuts();
 });
 </script>
 
 <style lang="scss" scoped>
-#shortcut-list {
+#shortcut-list,
+#page-shortcut-list {
   overflow: hidden;
   :deep(.n-card__content) {
     padding: 0;
@@ -286,6 +387,13 @@ onMounted(() => {
     }
     .n-input {
       user-select: none;
+    }
+  }
+}
+#page-shortcut-list {
+  .shortcut {
+    .name {
+      min-width: 120px;
     }
   }
 }

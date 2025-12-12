@@ -1,5 +1,5 @@
 <template>
-  <div :key="searchKeyword" class="search">
+  <div class="search">
     <div class="title">
       <n-text class="keyword">{{ searchKeyword }}</n-text>
       <n-text depth="3">的相关搜索</n-text>
@@ -17,9 +17,20 @@
     <RouterView v-slot="{ Component }">
       <Transition :name="`router-${settingStore.routeAnimation}`" mode="out-in">
         <KeepAlive v-if="settingStore.useKeepAlive">
-          <component :is="Component" :keyword="searchKeyword" class="router-view" />
+          <component
+            :is="Component"
+            :key="route.fullPath"
+            :keyword="searchKeyword"
+            class="router-view"
+          />
         </KeepAlive>
-        <component v-else :is="Component" :keyword="searchKeyword" class="router-view" />
+        <component
+          v-else
+          :is="Component"
+          :key="route.fullPath"
+          :keyword="searchKeyword"
+          class="router-view"
+        />
       </Transition>
     </RouterView>
   </div>
@@ -28,14 +39,15 @@
 <script setup lang="ts">
 import { useSettingStore } from "@/stores";
 
+const route = useRoute();
 const router = useRouter();
 const settingStore = useSettingStore();
 
 // 搜索关键词
-const searchKeyword = computed(() => router.currentRoute.value.query.keyword as string);
+const searchKeyword = computed(() => route.query.keyword as string);
 
 // 搜索分类
-const searchType = ref<string>((router.currentRoute.value?.name as string) || "search-songs");
+const searchType = ref<string>("search-songs");
 
 // Tabs 改变
 const tabChange = (value: string) => {
@@ -47,10 +59,16 @@ const tabChange = (value: string) => {
   });
 };
 
-onBeforeRouteUpdate((to) => {
-  if (to.matched[0].name !== "search") return;
-  searchType.value = to.name as string;
-});
+// 监听路由变化，同步 Tab 状态
+watch(
+  () => route.name,
+  (name) => {
+    if (name && name.toString().startsWith("search-")) {
+      searchType.value = name as string;
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <style lang="scss" scoped>

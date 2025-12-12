@@ -3,13 +3,13 @@
   <n-menu
     ref="menuRef"
     v-model:value="menuActiveKey"
+    v-model:expanded-keys="settingStore.menuExpandedKeys"
     :class="{ cover: settingStore.menuShowCover }"
     :indent="0"
     :root-indent="26"
     :collapsed="statusStore.menuCollapsed"
     :collapsed-width="64"
     :collapsed-icon-size="22"
-    :default-expand-all="true"
     :options="menuOptions"
     :render-label="renderMenuLabel"
     @update:value="menuUpdate"
@@ -25,17 +25,20 @@ import {
   NButton,
   NEllipsis,
   NAvatar,
+  NBadge,
 } from "naive-ui";
 import type { CoverType } from "@/types/main";
 import { useStatusStore, useSettingStore, useDataStore, useMusicStore } from "@/stores";
 import { useRouter, RouterLink } from "vue-router";
-import { isElectron, renderIcon } from "@/utils/helper";
+import { renderIcon } from "@/utils/helper";
 import { openCreatePlaylist } from "@/utils/modal";
 import { debounce } from "lodash-es";
 import { isLogin } from "@/utils/auth";
-import player from "@/utils/player";
+import { isElectron } from "@/utils/env";
+import { usePlayer } from "@/utils/player";
 
 const router = useRouter();
+const player = usePlayer();
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
@@ -63,6 +66,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           key: "discover",
           link: "discover",
           label: "发现音乐",
+          show: !settingStore.hideDiscover,
           icon: renderIcon("Discover", {
             style: {
               transform: "translateY(-1px)",
@@ -72,7 +76,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
         {
           key: "personal-fm",
           label: "私人漫游",
-          show: isLogin() !== 0,
+          show: isLogin() !== 0 && !settingStore.hidePersonalFM,
           icon: renderIcon("Radio", {
             style: {
               transform: "translateY(-1px)",
@@ -83,6 +87,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           key: "radio-hot",
           link: "radio-hot",
           label: "播客电台",
+          show: !settingStore.hideRadioHot,
           icon: renderIcon("Record", {
             style: {
               transform: "translateY(-1px)",
@@ -98,17 +103,19 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           label: () =>
             h("div", { class: "user-liked" }, [
               h(NText, null, () => "我喜欢的音乐"),
-              h(NButton, {
-                type: "tertiary",
-                round: true,
-                strong: true,
-                secondary: true,
-                renderIcon: renderIcon("HeartBit"),
-                onClick: (event: Event) => {
-                  event.stopPropagation();
-                  openHeartMode();
-                },
-              }),
+              !settingStore.hideHeartbeatMode
+                ? h(NButton, {
+                    type: "tertiary",
+                    round: true,
+                    strong: true,
+                    secondary: true,
+                    renderIcon: renderIcon("HeartBit"),
+                    onClick: (event: Event) => {
+                      event.stopPropagation();
+                      openHeartMode();
+                    },
+                  })
+                : null,
             ]),
           icon: renderIcon("Favorite"),
         },
@@ -116,26 +123,43 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           key: "like",
           link: "like",
           label: "我的收藏",
+          show: !settingStore.hideLike,
           icon: renderIcon("Star"),
         },
         {
           key: "cloud",
           link: "cloud",
           label: "我的云盘",
-          show: isLogin() === 1,
+          show: isLogin() === 1 && !settingStore.hideCloud,
           icon: renderIcon("Cloud"),
+        },
+        {
+          key: "download",
+          label: () =>
+            h(
+              NBadge,
+              {
+                show: dataStore.downloadingSongs.length > 0,
+                value: dataStore.downloadingSongs.length,
+                offset: [22, 13],
+              },
+              () => "下载管理",
+            ),
+          show: isElectron && !settingStore.hideDownload,
+          icon: renderIcon("Download"),
         },
         {
           key: "local",
           link: "local",
           label: "本地歌曲",
-          show: isElectron,
+          show: isElectron && !settingStore.hideLocal,
           icon: renderIcon("FolderMusic"),
         },
         {
           key: "history",
           link: "history",
           label: "最近播放",
+          show: !settingStore.hideHistory,
           icon: renderIcon("History"),
         },
         {
@@ -145,6 +169,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
         // 创建的歌单
         {
           key: "user-playlists",
+          show: !settingStore.hideUserPlaylists,
           icon: statusStore.menuCollapsed ? renderIcon("PlaylistAdd") : undefined,
           label: () =>
             h("div", { class: "user-list" }, [
@@ -166,6 +191,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
         // 收藏的歌单
         {
           key: "liked-playlists",
+          show: !settingStore.hideLikedPlaylists,
           icon: statusStore.menuCollapsed ? renderIcon("PlaylistAddCheck") : undefined,
           label: () =>
             h(
@@ -265,6 +291,13 @@ const menuUpdate = (key: string, item: MenuOption) => {
           name: "like-songs",
         });
         break;
+      // 下载管理
+      case "download":
+        router.push({
+          name:
+            dataStore.downloadingSongs.length > 0 ? "download-downloading" : "download-downloaded",
+        });
+        break;
       default:
         break;
     }
@@ -274,10 +307,22 @@ const menuUpdate = (key: string, item: MenuOption) => {
 // 选中菜单项
 const checkMenuItem = () => {
   // 当前路由名称
-  const routerName =
+  let routerName =
     (router.currentRoute.value.matched?.[0]?.name as string) ||
     (router.currentRoute.value?.name as string);
   if (!routerName) return;
+  // 处理本地歌曲子路由
+  if (routerName.startsWith("local-")) {
+    routerName = "local";
+  }
+  // 处理收藏子路由
+  if (routerName.startsWith("like-") && routerName !== "like-songs") {
+    routerName = "like";
+  }
+  // 处理下载子路由
+  if (routerName.startsWith("download-")) {
+    routerName = "download";
+  }
   // 显示菜单
   menuRef.value?.showOption(routerName);
   // 高亮菜单

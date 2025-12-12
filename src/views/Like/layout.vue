@@ -78,10 +78,15 @@ const likeData = computed(() => [
   },
 ]);
 
-onBeforeRouteUpdate((to) => {
-  if (to.matched[0].name !== "like") return;
-  likeType.value = to.name as string;
-});
+// 监听路由变化
+watch(
+  () => router.currentRoute.value.name,
+  (val) => {
+    if (val && (val as string).startsWith("like-")) {
+      likeType.value = val as string;
+    }
+  },
+);
 </script>
 
 <style lang="scss" scoped>

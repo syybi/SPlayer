@@ -6,12 +6,13 @@ import type {
   UserLikeDataType,
   CatType,
   LoginType,
+  SongLevelType,
 } from "@/types/main";
 import { playlistCatlist } from "@/api/playlist";
 import { cloneDeep, isEmpty } from "lodash-es";
 import { isLogin } from "@/utils/auth";
-import localforage from "localforage";
 import { formatCategoryList } from "@/utils/format";
+import localforage from "localforage";
 
 interface ListState {
   playList: SongType[];
@@ -33,6 +34,21 @@ interface ListState {
     cats: CatType[];
     hqCats: CatType[];
   };
+  /** 正在下载的歌曲列表 */
+  downloadingSongs: Array<{
+    /** 歌曲信息 */
+    song: SongType;
+    /** 音质 */
+    quality: SongLevelType;
+    /** 状态：下载中 / 等待中 / 失败 */
+    status: "downloading" | "waiting" | "failed";
+    /** 下载进度 */
+    progress: number;
+    /** 已传输大小 */
+    transferred: string;
+    /** 总大小 */
+    totalSize: string;
+  }>;
 }
 
 type UserDataKeys = keyof ListState["userLikeData"];
@@ -100,6 +116,8 @@ export const useDataStore = defineStore("data", {
       cats: [],
       hqCats: [],
     },
+    // 正在下载的歌曲列表
+    downloadingSongs: [],
   }),
   getters: {
     // 是否为喜欢歌曲
@@ -247,7 +265,7 @@ export const useDataStore = defineStore("data", {
     async getUserLikePlaylist() {
       if (!isLogin() || !this.userData.userId) return;
       const result = await musicDB.getItem("likeSongsList");
-      return result;
+      return result as { detail: CoverType; data: SongType[] } | null;
     },
     // 更改云盘歌单
     async setCloudPlayList(data: SongType[]) {
@@ -322,6 +340,77 @@ export const useDataStore = defineStore("data", {
       } catch (error) {
         console.error("Error getting playlist cat list:", error);
         throw error;
+      }
+    },
+    // 添加正在下载的歌曲
+    addDownloadingSong(song: SongType, quality: SongLevelType) {
+      // 检查是否已存在
+      const exists = this.downloadingSongs.find((item) => item.song.id === song.id);
+      if (exists) return;
+      this.downloadingSongs.push({
+        song: cloneDeep(song),
+        quality,
+        status: "waiting",
+        progress: 0,
+        transferred: "0MB",
+        totalSize: "0MB",
+      });
+      // 保存到本地存储
+      musicDB.setItem("downloadingSongs", cloneDeep(this.downloadingSongs));
+    },
+    // 更新下载状态
+    updateDownloadStatus(songId: number, status: "downloading" | "waiting" | "failed") {
+      const index = this.downloadingSongs.findIndex((item) => item.song.id === songId);
+      if (index !== -1) {
+        this.downloadingSongs[index].status = status;
+        // 强制触发响应式更新 (Fix: 下一首歌曲状态更新UI不变化的问题)
+        this.downloadingSongs = [...this.downloadingSongs];
+      }
+    },
+    // 更新下载进度
+    updateDownloadProgress(
+      songId: number,
+      progress: number,
+      transferred: string,
+      totalSize: string,
+    ) {
+      const item = this.downloadingSongs.find((item) => item.song.id === songId);
+      if (item) {
+        item.progress = progress;
+        item.transferred = transferred;
+        item.totalSize = totalSize;
+        // 进度更新过于频繁，不需要强制更新整个数组，以免影响性能
+      }
+    },
+    // 移除正在下载的歌曲（下载失败时）
+    removeDownloadingSong(songId: number) {
+      const index = this.downloadingSongs.findIndex((item) => item.song.id === songId);
+      if (index !== -1) {
+        this.downloadingSongs.splice(index, 1);
+        musicDB.setItem("downloadingSongs", cloneDeep(this.downloadingSongs));
+      }
+    },
+    // 标记下载失败（保留在列表中）
+    markDownloadFailed(songId: number) {
+      const index = this.downloadingSongs.findIndex((item) => item.song.id === songId);
+      if (index !== -1) {
+        this.downloadingSongs[index].status = "failed";
+        this.downloadingSongs[index].progress = 0;
+        this.downloadingSongs[index].transferred = "0MB";
+        this.downloadingSongs[index].totalSize = "0MB";
+        this.downloadingSongs = [...this.downloadingSongs];
+        musicDB.setItem("downloadingSongs", cloneDeep(this.downloadingSongs));
+      }
+    },
+    // 重置下载任务状态（用于重试）
+    resetDownloadingSong(songId: number) {
+      const index = this.downloadingSongs.findIndex((item) => item.song.id === songId);
+      if (index !== -1) {
+        this.downloadingSongs[index].status = "waiting";
+        this.downloadingSongs[index].progress = 0;
+        this.downloadingSongs[index].transferred = "0MB";
+        this.downloadingSongs[index].totalSize = "0MB";
+        this.downloadingSongs = [...this.downloadingSongs];
       }
     },
   },

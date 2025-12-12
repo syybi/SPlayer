@@ -37,7 +37,13 @@
       </n-flex>
     </div>
     <!-- 列表 -->
-    <SongList :data="musicStore.dailySongsData.list" :loading="true" height="auto" />
+    <SongList
+      :data="musicStore.dailySongsData.list"
+      :loading="true"
+      height="auto"
+      isDailyRecommend
+      disabledSort
+    />
   </div>
 </template>
 
@@ -48,8 +54,9 @@ import { updateDailySongsData } from "@/utils/auth";
 import { formatTimestamp } from "@/utils/time";
 import { renderIcon } from "@/utils/helper";
 import { openBatchList } from "@/utils/modal";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
 
+const player = usePlayer();
 const musicStore = useMusicStore();
 
 // 更新日期

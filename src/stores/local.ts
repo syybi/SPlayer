@@ -10,7 +10,11 @@ const localDB = localforage.createInstance({
   storeName: "local",
 });
 
-export const useLocalStore = () => {
+/**
+ * 创建 localStore 实例
+ * @returns localStore 实例
+ */
+const createLocalStore = () => {
   // 本地歌曲
   const localSongs = ref<SongType[]>([]);
 
@@ -59,4 +63,12 @@ export const useLocalStore = () => {
     updateLocalSong,
     deleteLocalSong,
   });
+};
+
+// 创建全局的 localStore 实例
+const localStoreInstance = createLocalStore();
+
+export const useLocalStore = () => {
+  // 确保单例
+  return localStoreInstance;
 };

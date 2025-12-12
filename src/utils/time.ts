@@ -75,23 +75,8 @@ export const formatCommentTime = (timestamp: number): string => {
  */
 export const calculateProgress = (currentTime: number, duration: number): number => {
   if (duration === 0) return 0;
-
   const progress = (currentTime / duration) * 100;
   return Math.min(Math.round(progress * 100) / 100, 100);
-};
-
-/**
- * 根据进度和总时长反推当前时间
- * @param {number} progress 进度百分比，范围通常是0到100
- * @param {number} duration 总时长，单位为秒
- * @returns {number} 当前时间，单位为秒，精确到0.01秒
- */
-export const calculateCurrentTime = (progress: number, duration: number): number => {
-  // 确保在有效范围内
-  progress = Math.min(Math.max(progress, 0), 100);
-
-  const currentTime = (progress / 100) * duration;
-  return Math.round(currentTime * 100) / 100;
 };
 
 /**
@@ -137,4 +122,14 @@ export const isBeforeSixAM = (timestamp: number) => {
  */
 export const convertToLocalTime = (isoString: string): string => {
   return dayjs(isoString).format("YYYY-MM-DD HH:mm:ss");
+};
+
+/**
+ * 将秒转为 分：秒
+ * @param seconds 秒数
+ * @returns 分：秒格式的字符串
+ */
+export const convertSecondsToTime = (seconds: number): string => {
+  // 需要补零
+  return dayjs.duration(seconds, "seconds").format("mm:ss");
 };

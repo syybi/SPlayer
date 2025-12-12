@@ -51,7 +51,7 @@ export const setColorSchemes = (
   if (!settingStore.themeGlobalColor && colorModeData) {
     // 修改关键颜色
     colorModeData.background =
-      mode === "dark" ? { r: 16, g: 16, b: 20 } : { r: 239, g: 239, b: 239 };
+      mode === "dark" ? { r: 16, g: 16, b: 20 } : { r: 246, g: 246, b: 246 };
     colorModeData["surface-container"] =
       mode === "dark" ? { r: 24, g: 24, b: 28 } : { r: 255, g: 255, b: 255 };
     console.log(colorModeData);

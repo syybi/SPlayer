@@ -74,7 +74,12 @@
     </n-flex>
     <!-- 列表 -->
     <Transition name="fade" mode="out-in">
-      <SongList v-if="!searchValue || searchData?.length" :data="listDataShow" :loading="loading" />
+      <SongList
+        v-if="!searchValue || searchData?.length"
+        :data="listDataShow"
+        :loading="loading"
+        @removeSong="handleRemoveSong"
+      />
       <n-empty
         v-else
         :description="`搜不到关于 ${searchValue} 的任何歌曲呀`"
@@ -97,8 +102,9 @@ import { userCloud } from "@/api/cloud";
 import { formatSongsList } from "@/utils/format";
 import { fuzzySearch, renderIcon } from "@/utils/helper";
 import { openBatchList } from "@/utils/modal";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
 
+const player = usePlayer();
 const router = useRouter();
 const dataStore = useDataStore();
 
@@ -108,7 +114,7 @@ const isActivated = ref<boolean>(false);
 // 云盘数据
 const loading = ref<boolean>(false);
 const cloudCount = ref<number>(0);
-const cloudData = shallowRef<SongType[]>(dataStore.cloudPlayList);
+const cloudData = ref<SongType[]>(dataStore.cloudPlayList);
 const cloudSize = ref<{ size: number; maxSize: number }>({ size: 0, maxSize: 0 });
 
 // 模糊搜索数据
@@ -175,6 +181,16 @@ watchDebounced(
   },
   { debounce: 300, maxWait: 1000 },
 );
+
+// 处理删除歌曲
+const handleRemoveSong = (ids: number[]) => {
+  // 从云盘数据中删除指定ID的歌曲
+  const updatedCloudData = cloudData.value.filter((song) => !ids.includes(song.id));
+  cloudData.value = updatedCloudData;
+  // 同步更新store中的数据
+  dataStore.setCloudPlayList(updatedCloudData);
+  // listVersion.value++;
+};
 
 onActivated(() => {
   if (!isActivated.value) {

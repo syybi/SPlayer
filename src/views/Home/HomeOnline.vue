@@ -30,7 +30,7 @@
       </n-gi>
     </n-grid>
     <!-- 公共推荐 -->
-    <div v-for="(item, index) in recData" :key="index" class="rec-public">
+    <div v-for="(item, index) in sortedRecData" :key="index" class="rec-public">
       <n-flex
         class="title"
         align="center"
@@ -52,7 +52,7 @@
 <script setup lang="ts">
 import type { ArtistType, CoverType } from "@/types/main";
 import { NText } from "naive-ui";
-import { useDataStore, useMusicStore } from "@/stores";
+import { useDataStore, useMusicStore, useSettingStore } from "@/stores";
 import { newAlbumsAll, personalized, radarPlaylist, topArtists } from "@/api/rec";
 import { allMv } from "@/api/video";
 import { radioRecommend } from "@/api/radio";
@@ -82,6 +82,7 @@ interface RecDataType {
 const router = useRouter();
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
+const settingStore = useSettingStore();
 
 // 日推标题
 const dailySongsTitle = computed(() => {
@@ -133,11 +134,24 @@ const recData = ref<RecDataType>({
   },
 });
 
+// 根据设置过滤和排序推荐数据
+const sortedRecData = computed(() => {
+  const sections = settingStore.homePageSections
+    .filter((section) => section.visible)
+    .sort((a, b) => a.order - b.order)
+    .map((section) => {
+      const key = section.key as keyof RecDataType;
+      return recData.value[key];
+    })
+    .filter((item) => item);
+  return sections;
+});
+
 // 获取全部推荐
 const getAllRecData = async () => {
   try {
-    // 延时 50ms
-    await sleep(50);
+    // 延时
+    await sleep(300);
 
     // 歌单
     try {
@@ -199,9 +213,10 @@ const getAllRecData = async () => {
   }
 };
 
+onActivated(getAllRecData);
+
 onMounted(() => {
   getAllRecData();
-  onActivated(getAllRecData);
 });
 </script>
 
@@ -235,6 +250,7 @@ onMounted(() => {
 .title {
   margin-top: 28px;
   padding: 0 4px;
+  width: max-content;
   .n-h {
     margin: 0;
     display: flex;

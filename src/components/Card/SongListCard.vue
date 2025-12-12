@@ -51,10 +51,11 @@
 import type { SongType } from "@/types/main";
 import { coverLoaded } from "@/utils/helper";
 import { sampleSize } from "lodash-es";
+import { VNodeChild } from "vue";
 
 const props = defineProps<{
   size: "normal" | "small";
-  title: string | VNode;
+  title: string | VNodeChild;
   data?: SongType[];
   description?: string;
   loading?: boolean;

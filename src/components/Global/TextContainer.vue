@@ -28,14 +28,16 @@ const isTextOverflowing = ref(false);
 
 // 容器宽度
 const { width: textContainerWidth } = useElementSize(textContainerRef);
+// 文本宽度
+const { width: textWidth } = useElementSize(textRef);
 
 // 检查文本是否超出宽度
 const checkTextWidth = () => {
   if (textRef.value && textContainerRef.value) {
-    const textWidth = textRef.value.offsetWidth;
-    const containerWidth = textContainerWidth.value;
+    const currentTextWidth = textRef.value.offsetWidth;
+    const currentContainerWidth = textContainerWidth.value;
     // 判断阈值
-    isTextOverflowing.value = textWidth > containerWidth + 2;
+    isTextOverflowing.value = currentTextWidth > currentContainerWidth + 2;
   }
   // 更新状态
   updateScroll();
@@ -56,6 +58,8 @@ let scrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 // 开始滚动
 const startScrolling = () => {
+  // 先停止之前的滚动
+  stopScrolling();
   if (!textRef.value || !textContainerRef.value || !scrollWrapperRef.value || !textCloneRef.value)
     return;
   // 设置滚动速度（ 单位：像素/帧 ）
@@ -97,7 +101,7 @@ const stopScrolling = () => {
 };
 
 watch(
-  () => [props.text, textContainerWidth.value, textCloneRef.value],
+  () => [props.text, textContainerWidth.value, textWidth.value, textCloneRef.value],
   () => {
     nextTick(checkTextWidth);
   },

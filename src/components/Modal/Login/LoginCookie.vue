@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import type { LoginType } from "@/types/main";
-import { isElectron } from "@/utils/helper";
+import { isElectron } from "@/utils/env";
 
 const emit = defineEmits<{
   close: [];

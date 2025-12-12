@@ -90,10 +90,54 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">搜索关键词建议</n-text>
+          <n-text class="tip" :depth="3">是否启用搜索关键词建议</n-text>
+        </div>
+        <n-switch class="set" v-model:value="settingStore.enableSearchKeyword" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">侧边栏显示封面</n-text>
           <n-text class="tip" :depth="3">是否显示歌单的封面，如果有</n-text>
         </div>
         <n-switch class="set" v-model:value="settingStore.menuShowCover" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">侧边栏隐藏</n-text>
+          <n-text class="tip" :depth="3">配置需要在侧边栏隐藏的菜单项</n-text>
+        </div>
+        <n-button type="primary" strong secondary @click="openSidebarHideManager"> 配置 </n-button>
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">首页栏目配置</n-text>
+          <n-text class="tip" :depth="3">调整首页各栏目的显示顺序或隐藏不需要的栏目</n-text>
+        </div>
+        <n-button type="primary" strong secondary @click="openHomePageSectionManager">
+          配置
+        </n-button>
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">显示歌曲音质</n-text>
+          <n-text class="tip" :depth="3">是否列表中显示歌曲音质</n-text>
+        </div>
+        <n-switch class="set" v-model:value="settingStore.showSongQuality" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">显示特权标签</n-text>
+          <n-text class="tip" :depth="3">是否显示如 VIP、EP 等特权标签</n-text>
+        </div>
+        <n-switch class="set" v-model:value="settingStore.showSongPrivilegeTag" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">显示原唱翻唱标签</n-text>
+          <n-text class="tip" :depth="3">是否显示歌曲原唱翻唱标签</n-text>
+        </div>
+        <n-switch class="set" v-model:value="settingStore.showSongOriginalTag" :round="false" />
       </n-card>
       <n-card class="set-item">
         <div class="label">
@@ -161,7 +205,12 @@
               恢复默认
             </n-button>
           </Transition>
-          <n-select v-model:value="settingStore.globalFont" :options="allFontsData" class="set" />
+          <n-select
+            v-model:value="settingStore.globalFont"
+            :options="allFontsData"
+            class="set"
+            filterable
+          />
         </n-flex>
       </n-card>
       <n-card class="set-item">
@@ -188,6 +237,35 @@
               ...allFontsData.filter((v) => v.value !== 'default'),
             ]"
             class="set"
+            filterable
+          />
+        </n-flex>
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">日语歌词字体</n-text>
+          <n-text class="tip" :depth="3"> 是否在歌词为日语时单独设置字体 </n-text>
+        </div>
+        <n-flex>
+          <Transition name="fade" mode="out-in">
+            <n-button
+              v-if="settingStore.japaneseLyricFont !== 'follow'"
+              type="primary"
+              strong
+              secondary
+              @click="settingStore.japaneseLyricFont = 'follow'"
+            >
+              恢复默认
+            </n-button>
+          </Transition>
+          <n-select
+            v-model:value="settingStore.japaneseLyricFont"
+            :options="[
+              { label: '跟随全局', value: 'follow' },
+              ...allFontsData.filter((v) => v.value !== 'default'),
+            ]"
+            class="set"
+            filterable
           />
         </n-flex>
       </n-card>
@@ -239,6 +317,15 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">通过 Orpheus 协议唤起本应用</n-text>
+          <n-text class="tip" :depth="3">
+            该协议通常用于官方网页端唤起官方客户端， 启用后可能导致官方客户端无法被唤起
+          </n-text>
+        </div>
+        <n-switch v-model:value="settingStore.registryProtocol.orpheus" class="set" :round="false" @update:value="orpheusChange" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">自动检查更新</n-text>
           <n-text class="tip" :depth="3">在每次开启软件时自动检查更新</n-text>
         </div>
@@ -251,10 +338,12 @@
 <script setup lang="ts">
 import type { SelectOption } from "naive-ui";
 import { useDataStore, useMusicStore, useSettingStore, useStatusStore } from "@/stores";
-import { isDev, isElectron } from "@/utils/helper";
+import { isDev, isElectron } from "@/utils/env";
+import songManager from "@/utils/songManager";
 import { isEmpty } from "lodash-es";
 import themeColor from "@/assets/data/themeColor.json";
-import player from "@/utils/player";
+import { openSidebarHideManager, openHomePageSectionManager } from "@/utils/modal";
+import { sendRegisterProtocol } from "@/utils/protocol";
 
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
@@ -347,7 +436,7 @@ const modeChange = (val: boolean) => {
         localStorage.removeItem("data-store");
         localStorage.removeItem("music-store");
         // 重启
-        if (!isDev) window.electron.ipcRenderer.send("win-reload");
+        if (!isDev) window.electron.ipcRenderer.send("win-restart");
       },
       onNegativeClick: () => {
         useOnlineService.value = true;
@@ -359,7 +448,12 @@ const modeChange = (val: boolean) => {
 
 // 全局着色更改
 const themeGlobalColorChange = (val: boolean) => {
-  if (val) player.getCoverColor(musicStore.songCover);
+  if (val) songManager.getCoverColor(musicStore.songCover);
+};
+
+// 注册或取消注册协议
+const orpheusChange = async (isRegistry: boolean) => {
+  sendRegisterProtocol("orpheus", isRegistry)
 };
 
 onMounted(() => {

@@ -11,6 +11,7 @@
     <s-image
       :key="musicStore.getSongCover()"
       :src="musicStore.getSongCover('l')"
+      :observe-visibility="false"
       class="cover-img"
     />
     <!-- 动态封面 -->
@@ -45,6 +46,17 @@ const dynamicCoverLoaded = ref<boolean>(false);
 
 // 视频元素
 const videoRef = ref<HTMLVideoElement | null>(null);
+
+// 清理动态封面资源
+const cleanupDynamicCover = () => {
+  if (videoRef.value) {
+    videoRef.value.pause();
+    videoRef.value.src = "";
+    videoRef.value.load();
+  }
+  dynamicCover.value = "";
+  dynamicCoverLoaded.value = false;
+};
 
 // 封面再放送
 const { start: dynamicCoverStart, stop: dynamicCoverStop } = useTimeoutFn(
@@ -88,6 +100,13 @@ watch(
 );
 
 onMounted(getDynamicCover);
+
+onBeforeUnmount(() => {
+  // 停止定时器
+  dynamicCoverStop();
+  // 清理动态封面资源
+  cleanupDynamicCover();
+});
 </script>
 
 <style lang="scss" scoped>
@@ -146,7 +165,8 @@ onMounted(getDynamicCover);
       animation-play-state: paused;
       border-radius: 50%;
       border: 1vh solid #ffffff30;
-      background: linear-gradient(black 0%, transparent, black 98%),
+      background:
+        linear-gradient(black 0%, transparent, black 98%),
         radial-gradient(
           #000 52%,
           #555,

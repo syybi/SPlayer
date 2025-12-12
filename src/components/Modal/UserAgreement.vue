@@ -1,16 +1,22 @@
 <!-- 用户协议 -->
 <template>
   <div class="user-agreement">
-    <n-h1 class="title">用户协议</n-h1>
+    <n-h1 class="title">软件许可使用协议</n-h1>
     <n-scrollbar class="scrollbar">
       <n-flex class="date" justify="center">
         <n-tag round>生效日期：2024 年 7 月 16 日</n-tag>
-        <n-tag type="warning" round>更新日期：2024 年 9 月 28 日</n-tag>
+        <n-tag type="warning" round>更新日期：2025 年 12 月 10 日</n-tag>
+        <n-tag type="info" round>协议版本：v2.0</n-tag>
       </n-flex>
+      <n-alert type="warning" title="重要声明">
+        SPlayer 是一款完全免费且开源的音乐播放软件，遵循 AGPL-3.0 开源协议发布。
+        本软件永远不会向用户收取任何费用。如果您是从第三方渠道付费购买本软件，
+        您可能遇到了诈骗，请立即停止使用并举报。
+      </n-alert>
       <n-p>
-        欢迎使用 SPlayer（以下简称“本软件”）。本软件是一个本地音乐播放软件，可能会调用第三方 API
-        来增强其功能。请在使用本软件前仔细阅读本用户协议。本协议是您（以下简称“用户”）与 SPlayer
-        开发团队（以下简称“开发者”）之间的法律协议。一旦您下载、安装或使用本软件，即表示您同意接受本协议的所有条款和条件。
+        欢迎使用 SPlayer（以下简称"本软件"）。本软件是一个本地音乐播放软件，可能会调用第三方 API
+        来增强其功能。请在使用本软件前仔细阅读本用户协议。本协议是您（以下简称"用户"）与 SPlayer
+        开发团队（以下简称"开发者"）之间的法律协议。一旦您下载、安装或使用本软件，即表示您同意接受本协议的所有条款和条件。
       </n-p>
       <n-h3 prefix="bar"> 软件使用 </n-h3>
       <n-ol>
@@ -100,6 +106,9 @@
           如果本协议的任何条款被视为无效或不可执行，该条款将被修改以反映双方的意图，其余条款仍然完全有效。
         </n-li>
         <n-li>
+          本协议的所有标题仅仅是为了醒目及阅读方便，本身并没有实际涵义，不能作为解释本协议涵义的依据。
+        </n-li>
+        <n-li>
           本协议构成您与开发者之间关于使用本软件的完整协议，并取代之前的所有口头或书面协议和陈述。
         </n-li>
       </n-ol>
@@ -109,7 +118,7 @@
     </n-scrollbar>
     <n-flex justify="center">
       <n-button v-if="isElectron" type="error" @click="closeApp">不同意</n-button>
-      <n-button type="success" @click="emit('close')" :disabled="!isReadOver">
+      <n-button type="success" @click="agreeToAgreement" :disabled="!isReadOver">
         {{ isReadOver ? "同意并使用" : "请先完整阅读" }}
       </n-button>
     </n-flex>
@@ -117,20 +126,32 @@
 </template>
 
 <script setup lang="ts">
-import { isElectron } from "@/utils/helper";
+import { isElectron } from "@/utils/env";
+import { useSettingStore } from "@/stores";
+import { CURRENT_AGREEMENT_VERSION } from "@/constants/agreement";
 
 const emit = defineEmits<{
   close: [];
 }>();
 
+const settingStore = useSettingStore();
 const readOverRef = ref<HTMLElement | null>(null);
 
 // 是否阅读完毕
 const isReadOver = useElementVisibility(readOverRef);
 
+// 同意协议
+const agreeToAgreement = () => {
+  if (!isReadOver.value) return;
+  // 更新协议版本
+  settingStore.userAgreementVersion = CURRENT_AGREEMENT_VERSION;
+  // 关闭弹窗
+  emit("close");
+};
+
 // 关闭软件
 const closeApp = () => {
-  window.electron.ipcRenderer.send("win-close");
+  window.electron.ipcRenderer.send("quit-app");
 };
 </script>
 
@@ -143,6 +164,9 @@ const closeApp = () => {
       overflow: hidden;
       padding-right: 12px;
     }
+  }
+  .n-alert {
+    margin: 20px 0;
   }
   .title {
     text-align: center;

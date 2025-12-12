@@ -43,26 +43,33 @@
             </n-ellipsis>
             <!-- 音质 -->
             <n-tag
-              v-if="song?.path && song?.quality"
-              :bordered="false"
-              :type="song.quality === 'Hi-Res' ? 'warning' : 'info'"
+              v-if="song?.quality && settingStore.showSongQuality"
+              :type="qualityColor"
               class="quality"
               round
             >
               {{ song.quality }}
             </n-tag>
+            <!-- 原唱翻唱 -->
+            <template v-if="settingStore.showSongOriginalTag">
+              <n-tag v-if="song.originCoverType === 1" :bordered="false" type="primary" round>
+                原
+              </n-tag>
+              <n-tag v-if="song.originCoverType === 2" :bordered="false" type="info" round>
+                翻唱
+              </n-tag>
+            </template>
             <!-- 特权 -->
-            <n-tag v-if="song.originCoverType === 1" :bordered="false" type="primary" round>
-              原
-            </n-tag>
-            <n-tag v-if="song.free === 1" :bordered="false" type="error" round> VIP </n-tag>
-            <n-tag v-if="song.free === 4" :bordered="false" type="error" round> EP </n-tag>
-            <!-- 云盘 -->
-            <n-tag v-if="song?.pc" :bordered="false" class="cloud" type="info" round>
-              <template #icon>
-                <SvgIcon name="Cloud" />
-              </template>
-            </n-tag>
+            <template v-if="settingStore.showSongPrivilegeTag">
+              <n-tag v-if="song.free === 1" :bordered="false" type="error" round> VIP </n-tag>
+              <n-tag v-if="song.free === 4" :bordered="false" type="error" round> EP </n-tag>
+              <!-- 云盘 -->
+              <n-tag v-if="song?.pc" :bordered="false" class="cloud" type="info" round>
+                <template #icon>
+                  <SvgIcon name="Cloud" />
+                </template>
+              </n-tag>
+            </template>
             <!-- MV -->
             <n-tag
               v-if="song?.mv"
@@ -148,14 +155,15 @@
 </template>
 
 <script setup lang="ts">
-import type { SongType } from "@/types/main";
-import { useStatusStore, useMusicStore, useDataStore } from "@/stores";
-import { formatNumber, isElectron } from "@/utils/helper";
+import { QualityType, type SongType } from "@/types/main";
+import { useStatusStore, useMusicStore, useDataStore, useSettingStore } from "@/stores";
+import { formatNumber } from "@/utils/helper";
 import { openJumpArtist } from "@/utils/modal";
 import { toLikeSong } from "@/utils/auth";
 import { isObject } from "lodash-es";
 import { formatTimestamp, msToTime } from "@/utils/time";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
+import { isElectron } from "@/utils/env";
 import blob from "@/utils/blob";
 
 const props = defineProps<{
@@ -170,12 +178,22 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const player = usePlayer();
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
+const settingStore = useSettingStore();
 
 // 歌曲数据
 const song = toRef(props, "song");
+
+// 音质颜色
+const qualityColor = computed(() => {
+  if (song.value.quality === QualityType.HiRes) return "warning";
+  if (song.value.quality === QualityType.SQ) return "warning";
+  if (song.value.quality === QualityType.HQ) return "info";
+  return "primary";
+});
 
 // 加载本地歌曲封面
 const localCover = async (show: boolean) => {

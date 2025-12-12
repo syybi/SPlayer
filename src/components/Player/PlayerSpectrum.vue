@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { useStatusStore } from "@/stores";
+import { usePlayer } from "@/utils/player";
 
 const props = defineProps<{
   show: boolean;
@@ -14,7 +14,7 @@ const props = defineProps<{
   color?: string;
 }>();
 
-const statusStore = useStatusStore();
+const player = usePlayer();
 
 // canvas
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -22,13 +22,14 @@ const isKeepDrawing = ref<boolean>(true);
 
 /**
  * 绘制音乐频谱图
- * @param {Array} data - 包含音频频谱数据的数组
  */
-const drawSpectrum = (data: number[]) => {
-  if (!data) return;
+const drawSpectrum = () => {
+  const spectrumData = player.getSpectrumData();
+
+  if (!spectrumData) return;
+  // 转换为普通数组并处理
+  const data = Array.from(spectrumData).slice(10);
   if (!isKeepDrawing.value || !canvasRef.value) return;
-  // 去除频谱前 10 项
-  data = data.slice(10);
   // 设置画布宽度，最大为 1600
   canvasRef.value.width = document.body.clientWidth >= 1600 ? 1600 : document.body.clientWidth;
   // 设置画布高度
@@ -39,7 +40,7 @@ const drawSpectrum = (data: number[]) => {
   const canvasWidth = canvasRef.value.width;
   const canvasHeight = canvasRef.value.height;
   // 频谱数量
-  const numBars = statusStore.spectrumsData.length / 2.5;
+  const numBars = data.length / 2.5;
   // 圆角半径
   const cornerRadius = props.radius || 2.5;
   // 柱形宽度
@@ -98,15 +99,20 @@ const roundRect = (
 };
 
 // 开始绘制频谱
-const { pause: pauseDraw, resume: resumeDraw } = useRafFn(() => {
-  drawSpectrum(statusStore.spectrumsData);
-});
+const { pause: pauseDraw, resume: resumeDraw } = useRafFn(
+  () => {
+    drawSpectrum();
+  },
+  { immediate: false },
+);
 
 onMounted(() => {
+  isKeepDrawing.value = true;
   resumeDraw();
 });
 
 onBeforeUnmount(() => {
+  isKeepDrawing.value = false;
   pauseDraw();
 });
 </script>

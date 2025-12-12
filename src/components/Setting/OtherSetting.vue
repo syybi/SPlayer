@@ -13,12 +13,12 @@
       <n-card class="set-item">
         <div class="label">
           <n-text class="name">真实 IP 地址</n-text>
-          <n-text class="tip" :depth="3">可在此处输入国内 IP</n-text>
+          <n-text class="tip" :depth="3">可在此处输入国内 IP，不填写则为随机</n-text>
         </div>
         <n-input
           v-model:value="settingStore.realIP"
           :disabled="!settingStore.useRealIP"
-          placeholder="请填写真实 IP 地址"
+          placeholder="127.0.0.1"
           class="set"
         >
           <template #prefix>
@@ -101,6 +101,26 @@
         </n-card>
       </n-collapse-transition>
     </div>
+    <div v-if="isElectron" class="set-list">
+      <n-h3 prefix="bar"> 
+        备份与恢复 
+        <n-tag type="warning" size="small" round>Beta</n-tag>
+      </n-h3>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">导出设置</n-text>
+          <n-text class="tip" :depth="3">将当前所有设置导出为 JSON 文件</n-text>
+        </div>
+        <n-button type="primary" strong secondary @click="exportSettings"> 导出设置 </n-button>
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">导入设置</n-text>
+          <n-text class="tip" :depth="3">从 JSON 文件恢复设置（导入后将自动重启）</n-text>
+        </div>
+        <n-button type="primary" strong secondary @click="importSettings"> 导入设置 </n-button>
+      </n-card>
+    </div>
     <div class="set-list">
       <n-h3 prefix="bar"> 重置 </n-h3>
       <n-card class="set-item">
@@ -123,8 +143,9 @@
 
 <script setup lang="ts">
 import { useSettingStore, useDataStore } from "@/stores";
-import { isElectron } from "@/utils/helper";
+import { isElectron } from "@/utils/env";
 import { debounce } from "lodash-es";
+import { NAlert, NTag } from "naive-ui";
 
 const dataStore = useDataStore();
 const settingStore = useSettingStore();
@@ -159,6 +180,69 @@ const testProxy = async () => {
     window.$message.error("代理测试失败，请重试");
   }
   testProxyLoading.value = false;
+  testProxyLoading.value = false;
+};
+
+// 导出设置
+const exportSettings = async () => {
+  console.log("[Frontend] Export settings clicked");
+  try {
+    // 收集渲染进程数据 (localStorage)
+    const rendererData = {
+      "setting-store": localStorage.getItem("setting-store"),
+      "shortcut-store": localStorage.getItem("shortcut-store"),
+    };
+    
+    const result = await window.api.store.export(rendererData);
+    console.log("[Frontend] Export result:", result);
+    if (result) {
+      window.$message.success("设置导出成功");
+    } else {
+      window.$message.error("设置导出失败");
+    }
+  } catch (error) {
+    console.error("[Frontend] Export error:", error);
+    window.$message.error("设置导出出错");
+  }
+};
+
+// 导入设置
+const importSettings = async () => {
+  console.log("[Frontend] Import settings clicked");
+  window.$dialog.warning({
+    title: "导入设置",
+    content: () => h("div", null, [
+      h(NAlert, { type: "warning", showIcon: true, style: { marginBottom: "12px" } }, { default: () => "目前备份数据功能属于测试阶段，不保证可用性" }),
+      h("div", null, "导入设置将覆盖当前所有配置并重启软件，是否继续？")
+    ]),
+    positiveText: "确定",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      console.log("[Frontend] Import confirmed");
+      try {
+        const data = await window.api.store.import();
+        console.log("[Frontend] Import data:", data);
+        
+        if (data) {
+          // 恢复渲染进程数据
+          if (data.renderer) {
+            if (data.renderer["setting-store"]) localStorage.setItem("setting-store", data.renderer["setting-store"]);
+            if (data.renderer["shortcut-store"]) localStorage.setItem("shortcut-store", data.renderer["shortcut-store"]);
+          }
+          
+          window.$message.success("设置导入成功，即将重启");
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        } else {
+          window.$message.error("设置导入失败或已取消");
+        }
+      } catch (error) {
+        console.error("[Frontend] Import error:", error);
+        window.$message.error("设置导入出错");
+      }
+    },
+  });
 };
 
 // 重置设置

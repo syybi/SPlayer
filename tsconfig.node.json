@@ -4,13 +4,13 @@
     "electron.vite.config.*",
     "electron/**/*",
     "electron/main/index.ts",
-    "electron/main/logger.ts",
-    "electron/main/store.ts",
+    "electron/main/logger/index.ts",
+    "electron/main/store/index.ts",
     "electron/main/utils.ts",
     "electron/main/index.d.ts",
     "electron/preload/index.d.ts",
     "electron/preload/index.ts",
-    "dist/lastfm.ts"
+    "src/assets/data/*"
   ],
   "compilerOptions": {
     "composite": true,

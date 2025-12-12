@@ -15,8 +15,6 @@ coverage
 *.local
 out
 .env
-auto-imports.d.ts
-components.d.ts
 
 # Editor directories and files
 .vscode/*

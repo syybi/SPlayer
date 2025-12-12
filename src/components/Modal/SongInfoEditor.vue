@@ -190,24 +190,24 @@ const getSongInfo = async () => {
     common: ICommonTagsResult;
     format: IFormat;
     md5: string;
+    lyric?: string;
   } = await window.electron.ipcRenderer.invoke("get-music-metadata", path);
-  // console.log(infoData);
   // 解构数据
-  const { fileName, fileSize, common, format, md5 } = infoData;
+  const { fileName, fileSize, common, format, md5, lyric } = infoData;
   // 更新数据
   infoFormData.value = {
-    fileName,
-    name: common.title || "",
-    artist: common.artist || "",
-    album: common.album || "",
-    alia: (common.comment?.[0] as string) || "",
-    lyric: (common.lyrics?.[0] as unknown as string) || "",
-    type: format.codec,
+    fileName: String(fileName),
+    name: String(common.title ?? ""),
+    artist: String(common.artist ?? ""),
+    album: String(common.album ?? ""),
+    alia: String(common.comment?.[0]?.text ?? ""),
+    lyric: String(lyric ?? ""),
+    type: String(format.codec ?? ""),
     duration: format.duration ? Number(format.duration.toFixed(2)) : 0,
     size: fileSize,
     br: format.bitrate ? Math.floor(format.bitrate / 1000 || 0) : 0,
     frequency: format.sampleRate,
-    md5,
+    md5: String(md5),
   };
   // 获取封面
   const coverBuff = common.picture?.[0]?.data || "";

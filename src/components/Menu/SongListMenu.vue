@@ -18,7 +18,8 @@
 <script setup lang="ts">
 import type { SongType } from "@/types/main";
 import { NAlert, type DropdownOption } from "naive-ui";
-import { useStatusStore, useLocalStore, useDataStore } from "@/stores";
+import { useStatusStore, useDataStore, useMusicStore } from "@/stores";
+import DownloadManager from "@/utils/downloadManager";
 import { renderIcon, copyData } from "@/utils/helper";
 import { deleteCloudSong, importCloudSong } from "@/api/cloud";
 import {
@@ -29,14 +30,17 @@ import {
 } from "@/utils/modal";
 import { deleteSongs, isLogin } from "@/utils/auth";
 import { songUrl } from "@/api/song";
-import player from "@/utils/player";
+import { dailyRecommendDislike } from "@/api/rec";
+import { formatSongsList } from "@/utils/format";
+import { usePlayer } from "@/utils/player";
 
 const emit = defineEmits<{ removeSong: [index: number[]] }>();
 
 const router = useRouter();
+const player = usePlayer();
 const dataStore = useDataStore();
-const localStore = useLocalStore();
 const statusStore = useStatusStore();
+const musicStore = useMusicStore();
 
 // 右键菜单数据
 const dropdownX = ref<number>(0);
@@ -47,11 +51,12 @@ const dropdownOptions = ref<DropdownOption[]>([]);
 // 开启右键菜单
 const openDropdown = (
   e: MouseEvent,
-  data: SongType[],
+  _data: SongType[],
   song: SongType,
   index: number,
   type: "song" | "radio",
   playListId?: number,
+  isDailyRecommend: boolean = false,
 ) => {
   try {
     e.preventDefault();
@@ -69,6 +74,8 @@ const openDropdown = (
     const isCurrent = statusStore.playIndex === index;
     // 是否为用户歌单
     const isUserPlaylist = !!playListId && userPlaylistsData.some((pl) => pl.id === playListId);
+    // 是否正在下载或下载失败
+    const isDownloading = dataStore.downloadingSongs.some((item) => item.song.id === song.id);
     // 生成菜单
     nextTick().then(() => {
       dropdownOptions.value = [
@@ -109,6 +116,15 @@ const openDropdown = (
         {
           key: "line-1",
           type: "divider",
+        },
+        {
+          key: "dislike",
+          label: "不感兴趣",
+          show: isDailyRecommend && isLoginNormal,
+          props: {
+            onClick: () => dislikeSong(song, index),
+          },
+          icon: renderIcon("HeartBroken"),
         },
         {
           key: "more",
@@ -199,7 +215,7 @@ const openDropdown = (
           label: "从本地磁盘中删除",
           show: isLocal && !isCurrent,
           props: {
-            onClick: () => deleteLocalSong(song, data, index),
+            onClick: () => deleteLocalSong(song),
           },
           icon: renderIcon("Delete"),
         },
@@ -232,9 +248,16 @@ const openDropdown = (
         {
           key: "download",
           label: "下载歌曲",
-          show: !isLocal && type === "song",
+          show: !isLocal && type === "song" && !isDownloading,
           props: { onClick: () => openDownloadSong(song) },
           icon: renderIcon("Download"),
+        },
+        {
+          key: "retry-download",
+          label: "重试下载",
+          show: isDownloading,
+          props: { onClick: () => DownloadManager.retryDownload(song.id) },
+          icon: renderIcon("Refresh"),
         },
       ];
       // 显示菜单
@@ -249,7 +272,7 @@ const openDropdown = (
 };
 
 // 删除歌曲
-const deleteLocalSong = (song: SongType, data: SongType[], index: number) => {
+const deleteLocalSong = (song: SongType) => {
   if (!song.path) return;
   window.$dialog.warning({
     title: "确认删除",
@@ -267,9 +290,14 @@ const deleteLocalSong = (song: SongType, data: SongType[], index: number) => {
     onPositiveClick: async () => {
       const result = await window.electron.ipcRenderer.invoke("delete-file", song.path);
       if (result) {
-        data.splice(index, 1);
-        localStore.deleteLocalSong(index);
-        player.removeSongIndex(index);
+        // 通知父组件删除歌曲
+        emit("removeSong", [song.id]);
+        // 从播放列表中删除该歌曲
+        const currentPlayList = dataStore.playList;
+        const songToRemoveIndex = currentPlayList.findIndex((playSong) => playSong.id === song.id);
+        if (songToRemoveIndex !== -1) {
+          player.removeSongIndex(songToRemoveIndex);
+        }
         window.$message.success(`${song.name} 删除成功`);
       } else {
         window.$message.error(`${song.name} 删除失败，请重试`);
@@ -290,8 +318,11 @@ const deleteCloudSongData = (song: SongType, index: number) => {
       if (result.code == 200) {
         dataStore.cloudPlayList.splice(index, 1);
         dataStore.setCloudPlayList(dataStore.cloudPlayList);
-        if (statusStore.playIndex === index) {
-          player.nextOrPrev("next");
+        // 从播放列表中删除该歌曲
+        const currentPlayList = dataStore.playList;
+        const songToRemoveIndex = currentPlayList.findIndex((playSong) => playSong.id === song.id);
+        if (songToRemoveIndex !== -1) {
+          player.removeSongIndex(songToRemoveIndex);
         }
         window.$message.success("删除成功");
       } else {
@@ -319,6 +350,41 @@ const importSongToCloud = async (song: SongType) => {
     }
   } else {
     window.$message.error("导入失败，请重试");
+  }
+};
+
+// 每日推荐 - 不感兴趣
+const dislikeSong = async (song: SongType, index: number) => {
+  if (!song?.id) return;
+  const loadingMessage = window.$message.loading("正在不感兴趣...", { duration: 0 });
+  try {
+    const result = await dailyRecommendDislike(song.id);
+    // 关闭 loading
+    loadingMessage.destroy();
+    if (result.code === 200) {
+      // 创建新数组以触发响应式更新
+      const currentList = [...musicStore.dailySongsData.list];
+      // 从列表中移除当前歌曲
+      currentList.splice(index, 1);
+      // 替换原歌曲
+      if (result.data) {
+        const formattedSong = formatSongsList([result.data])[0];
+        currentList.splice(index, 0, formattedSong);
+      }
+      // 更新列表（同时更新 timestamp 触发完整响应式更新）
+      musicStore.dailySongsData = {
+        list: currentList,
+        timestamp: Date.now(),
+      };
+      window.$message.success("已标记为不感兴趣");
+    } else {
+      window.$message.error("操作失败，请重试");
+    }
+  } catch (error) {
+    // 关闭 loading
+    loadingMessage.destroy();
+    window.$message.error("操作失败，请重试");
+    console.error("不感兴趣操作失败：", error);
   }
 };
 

@@ -21,6 +21,7 @@
         :data="chooseArtist ? artistData[chooseArtist] : []"
         :loading="true"
         :hidden-cover="!settingStore.showLocalCover"
+        @removeSong="handleRemoveSong"
       />
     </Transition>
   </div>
@@ -28,11 +29,12 @@
 
 <script setup lang="ts">
 import type { SongType } from "@/types/main";
-import { useSettingStore } from "@/stores";
+import { useLocalStore, useSettingStore } from "@/stores";
 import { isArray, some } from "lodash-es";
 
 const props = defineProps<{ data: SongType[] }>();
 
+const localStore = useLocalStore();
 const settingStore = useSettingStore();
 
 // 歌手数据
@@ -76,6 +78,13 @@ const formatArtistsList = (
   // 默认选中
   chooseArtist.value = sortedArtists[0];
   return sortedAllArtists;
+};
+
+// 处理删除歌曲
+const handleRemoveSong = (ids: number[]) => {
+  // 从本地歌曲列表中删除指定ID的歌曲
+  const updatedSongs = localStore.localSongs.filter((song) => !ids.includes(song.id));
+  localStore.updateLocalSong(updatedSongs);
 };
 
 watch(

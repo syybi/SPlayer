@@ -1,7 +1,11 @@
 <!-- 全局图标 -->
 <template>
   <n-icon v-if="name" :size="size" :color="color" :depth="depth">
-    <div ref="svgContainer" class="svg-container" />
+    <div
+      ref="svgContainer"
+      :style="{ transform: offset ? `translateY(${offset}px)` : undefined }"
+      class="svg-container"
+    />
   </n-icon>
 </template>
 
@@ -10,6 +14,7 @@ const props = defineProps<{
   name: string;
   size?: string | number;
   color?: string;
+  offset?: number;
   depth?: 1 | 2 | 3 | 4 | 5;
 }>();
 

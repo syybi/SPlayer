@@ -1,8 +1,10 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { SongUrlResult } from "./unblock";
-import getKuwoSongUrl from "./kuwo";
-import log from "../../main/logger";
+import { serverLog } from "../../main/logger";
 import axios from "axios";
+import getKuwoSongUrl from "./kuwo";
+import getBodianSongUrl from "./bodian";
+import getGequbaoSongUrl from "./gequbao";
 
 /**
  * 直接获取 网易云云盘 链接
@@ -17,16 +19,16 @@ const getNeteaseSongUrl = async (id: number | string): Promise<SongUrlResult> =>
       params: { types: "url", id },
     });
     const songUrl = result.data.url;
-    log.info("🔗 NeteaseSongUrl URL:", songUrl);
+    serverLog.log("🔗 NeteaseSongUrl URL:", songUrl);
     return { code: 200, url: songUrl };
   } catch (error) {
-    log.error("❌ Get NeteaseSongUrl Error:", error);
+    serverLog.error("❌ Get NeteaseSongUrl Error:", error);
     return { code: 404, url: null };
   }
 };
 
 // 初始化 UnblockAPI
-const UnblockAPI = async (fastify: FastifyInstance) => {
+export const initUnblockAPI = async (fastify: FastifyInstance) => {
   // 主信息
   fastify.get("/unblock", (_, reply) => {
     reply.send({
@@ -61,8 +63,30 @@ const UnblockAPI = async (fastify: FastifyInstance) => {
       return reply.send(result);
     },
   );
+  // bodian
+  fastify.get(
+    "/unblock/bodian",
+    async (
+      req: FastifyRequest<{ Querystring: { [key: string]: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { keyword } = req.query;
+      const result = await getBodianSongUrl(keyword);
+      return reply.send(result);
+    },
+  );
+  // gequbao
+  fastify.get(
+    "/unblock/gequbao",
+    async (
+      req: FastifyRequest<{ Querystring: { [key: string]: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { keyword } = req.query;
+      const result = await getGequbaoSongUrl(keyword);
+      return reply.send(result);
+    },
+  );
 
-  log.info("🌐 Register UnblockAPI successfully");
+  serverLog.info("🌐 Register UnblockAPI successfully");
 };
-
-export default UnblockAPI;

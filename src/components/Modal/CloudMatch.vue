@@ -1,6 +1,6 @@
 <template>
   <div class="cloud-match">
-    <n-form ref="matchFormRef" :model="matchFormData" :rules="matchFormRules">
+    <n-form :model="matchFormData" :rules="matchFormRules">
       <n-form-item path="sid" label="原歌曲 ID">
         <n-input-number v-model:value="matchFormData.sid" :show-button="false" disabled />
       </n-form-item>
@@ -35,7 +35,7 @@
 
 <script setup lang="ts">
 import type { SongType } from "@/types/main";
-import type { FormInst, FormRules } from "naive-ui";
+import type { FormRules } from "naive-ui";
 import { useDataStore } from "@/stores";
 import { matchCloudSong } from "@/api/cloud";
 import { numberRule } from "@/utils/rules";
@@ -65,7 +65,6 @@ const isSongNormal = ref<boolean>(false);
 const matchSongData = ref<SongType | null>(null);
 
 // 表单数据
-const matchFormRef = ref<FormInst | null>(null);
 const matchFormData = ref<MatchFormType>({ sid: props.id, asid: null });
 const matchFormRules: FormRules = { asid: { ...numberRule, message: "请输入歌曲 ID" } };
 

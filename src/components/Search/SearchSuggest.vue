@@ -99,6 +99,10 @@ const searchSuggestionsType = {
     name: "歌单",
     icon: "MusicList",
   },
+  share: {
+    name: "分享的内容",
+    icon: "Link",
+  },
 };
 
 // 获取搜索建议
@@ -126,11 +130,95 @@ const calcSearchSuggestHeights = () => {
   }
 };
 
+/**
+ * 识别链接类型
+ * @param val 分享的内容
+ */
+const getLinkType = (val: string) => {
+  // 通用正则表达式提取任意URL
+  const urlRegex = /(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/[^\s]*)?/;
+  const urlMatch = val.match(urlRegex);
+  if (!urlMatch) return null;
+  // 补全协议
+  let fullUrl = urlMatch[0];
+  if (!fullUrl.startsWith("http")) {
+    fullUrl = "https://" + fullUrl;
+  }
+  try {
+    // 使用URL API解析
+    const url = new URL(fullUrl);
+    let pathname = url.pathname;
+    let searchParams = url.searchParams;
+    // 处理hash路由格式: /#/song?id=123
+    if (url.hash) {
+      const hashPath = url.hash.slice(1); // 移除 #
+      if (hashPath.includes("?")) {
+        const [hashPathname, hashSearch] = hashPath.split("?");
+        pathname = hashPathname;
+        // 解析hash中的查询参数
+        const hashParams = new URLSearchParams(hashSearch);
+        // 合并参数，hash参数优先级更高
+        for (const [key, value] of hashParams) {
+          if (!searchParams.has(key)) {
+            searchParams.set(key, value);
+          }
+        }
+      } else {
+        pathname = hashPath;
+      }
+    }
+    // 从路径中提取类型：/song /playlist /album /artist
+    const pathMatch = pathname.match(/\/(song|playlist|album|artist)(?:\/|$)/);
+    const type = pathMatch?.[1];
+    // 提取ID参数
+    const id = searchParams.get("id") || searchParams.get("hash");
+    if (!type || !id) {
+      return null;
+    }
+    const typeMap: Record<string, string> = {
+      song: "songs",
+      playlist: "playlists",
+      album: "albums",
+      artist: "artists",
+    };
+    const nameMap: Record<string, string> = {
+      song: "歌曲",
+      playlist: "歌单",
+      album: "专辑",
+      artist: "歌手",
+    };
+    return {
+      type: typeMap[type],
+      typeName: nameMap[type],
+      id: id,
+    };
+  } catch (error) {
+    console.warn("解析链接失败:", error);
+    return null;
+  }
+};
+
 // 搜索框改变
 watchDebounced(
   () => statusStore.searchInputValue,
   (val) => {
     if (!val || val === "" || !settingStore.useOnlineService) return;
+    // 识别链接
+    const linkData = getLinkType(val);
+    if (linkData) {
+      searchSuggestData.value = {
+        order: ["share"],
+        share: [
+          {
+            name: `前往分享的${linkData.typeName}`,
+            id: linkData.id,
+            realType: linkData.type,
+          },
+        ],
+      };
+      nextTick(calcSearchSuggestHeights);
+      return;
+    }
     getSearchSuggest(val);
   },
   { debounce: 300 },
