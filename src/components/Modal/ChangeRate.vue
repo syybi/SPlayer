@@ -32,8 +32,8 @@
 
 <script setup lang="ts">
 import { useStatusStore } from "@/stores";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
-const player = usePlayer();
+const player = usePlayerController();
 const statusStore = useStatusStore();
 </script>

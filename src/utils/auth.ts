@@ -15,7 +15,7 @@ import { likeSong } from "@/api/song";
 import { formatCoverList, formatArtistsList, formatSongsList } from "@/utils/format";
 import { useDataStore, useMusicStore } from "@/stores";
 import { logout, refreshLogin } from "@/api/login";
-import { debounce, isFunction } from "lodash-es";
+import { debounce, isFunction, type DebouncedFunc } from "lodash-es";
 import { isBeforeSixAM } from "./time";
 import { dailyRecommend } from "@/api/rec";
 import { isElectron } from "./env";
@@ -23,6 +23,7 @@ import { likePlaylist, playlistTracks } from "@/api/playlist";
 import { likeArtist } from "@/api/artist";
 import { likeAlbum } from "@/api/album";
 import { radioSub } from "@/api/radio";
+import router from "@/router";
 
 /**
  * 用户是否登录
@@ -34,9 +35,8 @@ export const isLogin = (): 0 | 1 | 2 => {
   if (dataStore.loginType === "uid") return 2;
   return getCookie("MUSIC_U") ? 1 : 0;
 };
-
 // 退出登录
-export const toLogout = async () => {
+export const toLogout = async (): Promise<void> => {
   const dataStore = useDataStore();
   await logout();
   // 去除 cookie
@@ -45,6 +45,8 @@ export const toLogout = async () => {
   sessionStorage.clear();
   // 清除用户数据
   await dataStore.clearUserData();
+  // 跳转首页
+  router.push("/");
   window.$message.success("成功退出登录");
 };
 
@@ -189,26 +191,26 @@ export const updateUserLikeMvs = async () => {
 };
 
 // 喜欢歌曲
-export const toLikeSong = debounce(
-  async (song: SongType, like: boolean) => {
-    if (!isLogin()) {
-      window.$message.warning("请登录后使用");
-      return;
-    }
-    if (isLogin() === 2) {
-      window.$message.warning("该登录模式暂不支持该操作");
-      return;
-    }
-    const dataStore = useDataStore();
-    const { id, path } = song;
-    if (path) {
-      window.$message.warning("本地歌曲暂不支持该操作");
-      return;
-    }
-    const likeList = dataStore.userLikeData.songs;
-    const exists = likeList.includes(id);
-    const { code } = await likeSong(id, like);
-    if (code === 200) {
+export const toLikeSong: DebouncedFunc<(song: SongType, like: boolean) => Promise<void>> = debounce(
+  async (song: SongType, like: boolean): Promise<void> => {
+    try {
+      if (!isLogin()) {
+        window.$message.warning("请登录后使用");
+        return;
+      }
+      if (isLogin() === 2) {
+        window.$message.warning("该登录模式暂不支持该操作");
+        return;
+      }
+      const dataStore = useDataStore();
+      const { id, path } = song;
+      if (path) {
+        window.$message.warning("本地歌曲暂不支持该操作");
+        return;
+      }
+      const likeList = dataStore.userLikeData.songs;
+      const exists = likeList.includes(id);
+      await likeSong(id, like);
       if (like && !exists) {
         likeList.push(id);
         window.$message.success("已添加到我喜欢的音乐");
@@ -222,9 +224,9 @@ export const toLikeSong = debounce(
       dataStore.setUserLikeData("songs", likeList);
       // ipc
       if (isElectron) window.electron.ipcRenderer.send("like-status-change", like);
-    } else {
+    } catch (error) {
       window.$message.error(`${like ? "喜欢" : "取消"}音乐时发生错误`);
-      return;
+      console.error("❌ 更新喜欢歌曲时失败:", error);
     }
   },
   300,
@@ -236,9 +238,9 @@ const toLikeSomething = (
   thingName: string,
   request: () => (id: number, t: 1 | 2) => Promise<{ code: number }>,
   update: () => Promise<void>,
-) =>
+): DebouncedFunc<(id: number, like: boolean) => Promise<void>> =>
   debounce(
-    async (id: number, like: boolean) => {
+    async (id: number, like: boolean): Promise<void> => {
       // 错误情况
       if (!id) return;
       if (!isLogin()) {

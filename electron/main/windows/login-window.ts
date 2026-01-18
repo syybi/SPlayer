@@ -69,6 +69,7 @@ class LoginWindow {
       width: 1280,
       height: 800,
       center: true,
+      frame: true,
       autoHideMenuBar: true,
       webPreferences: {
         preload: join(__dirname, "../preload/index.mjs"),

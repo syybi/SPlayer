@@ -18,9 +18,6 @@ import "@/style/animate.scss";
 import "github-markdown-css/github-markdown.css";
 import { isElectron } from "./utils/env";
 
-// 初始化 ipc
-initIpc();
-
 // 挂载
 const app = createApp(App);
 // pinia
@@ -35,6 +32,9 @@ app.directive("throttle", throttleDirective);
 app.directive("visible", visibleDirective);
 // app
 app.mount("#app");
+
+// 初始化 ipc
+initIpc();
 
 // 根据设置判断是否要注册协议
 if (isElectron) {

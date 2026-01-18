@@ -25,8 +25,8 @@
       <n-flex class="left" align="flex-end">
         <n-button
           :focusable="false"
-          :disabled="loading || !cloudData?.length"
-          :loading="loading"
+          :disabled="showLoading || !cloudData?.length"
+          :loading="showLoading"
           type="primary"
           strong
           secondary
@@ -36,12 +36,7 @@
           <template #icon>
             <SvgIcon name="Play" />
           </template>
-          {{
-            loading
-              ? `
-              正在更新... (${cloudData.length === cloudCount ? 0 : cloudData.length}/${cloudCount})`
-              : "播放"
-          }}
+          {{ showLoading ? `正在加载... (${cloudData.length}/${cloudCount})` : "播放" }}
         </n-button>
         <n-button :focusable="false" class="more" strong secondary circle @click="getAllCloudMusic">
           <template #icon>
@@ -102,11 +97,11 @@ import { userCloud } from "@/api/cloud";
 import { formatSongsList } from "@/utils/format";
 import { fuzzySearch, renderIcon } from "@/utils/helper";
 import { openBatchList } from "@/utils/modal";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
-const player = usePlayer();
 const router = useRouter();
 const dataStore = useDataStore();
+const player = usePlayerController();
 
 // 是否激活
 const isActivated = ref<boolean>(false);
@@ -126,6 +121,9 @@ const listDataShow = computed<SongType[]>(() => {
   if (searchValue.value && searchData.value.length) return searchData.value;
   return cloudData.value;
 });
+
+// 加载状态
+const showLoading = computed(() => cloudData.value.length === 0 && loading.value);
 
 // 是否处于云盘页面
 const isCloudPage = computed<boolean>(() => router.currentRoute.value.name === "cloud");

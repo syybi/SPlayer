@@ -12,7 +12,7 @@
       >
         <template #placeholder>
           <div class="cover-loading">
-            <img src="/images/song.jpg?assest" class="loading-img" alt="loading-img" />
+            <img src="/images/song.jpg?asset" class="loading-img" alt="loading-img" />
           </div>
         </template>
       </n-image>
@@ -60,7 +60,7 @@
           <!-- 不喜欢 -->
           <div
             class="menu-icon"
-            v-debounce="() => player.personalFMTrash(musicStore.personalFMSong?.id)"
+            v-debounce="() => songManager.personalFMTrash(musicStore.personalFMSong?.id)"
           >
             <SvgIcon class="icon" size="18" name="ThumbDown" />
           </div>
@@ -76,14 +76,17 @@
 </template>
 
 <script setup lang="ts">
+import { usePlayerController } from "@/core/player/PlayerController";
+import { useSongManager } from "@/core/player/SongManager";
 import { useMusicStore, useStatusStore } from "@/stores";
 import { coverLoaded } from "@/utils/helper";
 import { debounce, isObject } from "lodash-es";
-import { usePlayer } from "@/utils/player";
 
-const player = usePlayer();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
+
+const player = usePlayerController();
+const songManager = useSongManager();
 
 // 播放图标
 const playIcon = computed(() =>
@@ -97,20 +100,19 @@ const fmPlayOrPause = () => {
   } else {
     // 更改播放模式
     statusStore.personalFmMode = true;
-    statusStore.playHeartbeatMode = false;
-    player.resetStatus();
-    player.initPlayer();
+    statusStore.shuffleMode = "off";
+    player.playSong();
   }
 };
 
 // 下一曲
 const fmPlayNext = debounce(() => {
   statusStore.personalFmMode = true;
-  statusStore.playHeartbeatMode = false;
+  statusStore.shuffleMode = "off";
   player.nextOrPrev("next");
 }, 300);
 
-onMounted(() => player.initPersonalFM());
+onMounted(() => songManager.initPersonalFM());
 </script>
 
 <style lang="scss" scoped>

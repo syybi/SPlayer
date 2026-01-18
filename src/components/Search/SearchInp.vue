@@ -24,7 +24,7 @@
       <div
         v-show="statusStore.searchFocus"
         class="search-mask"
-        @click.stop="statusStore.searchFocus = false"
+        @click.stop="closeSearchFocus"
       />
     </Transition>
     <!-- 默认内容 -->
@@ -39,16 +39,16 @@
 <script setup lang="ts">
 import { useStatusStore, useDataStore, useSettingStore } from "@/stores";
 import { searchDefault } from "@/api/search";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 import { songDetail } from "@/api/song";
 import { formatSongsList } from "@/utils/format";
 import SearchInpMenu from "@/components/Menu/SearchInpMenu.vue";
 
 const router = useRouter();
-const player = usePlayer();
 const dataStore = useDataStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
+const player = usePlayerController();
 
 // 右键菜单
 const searchInpMenuRef = ref<InstanceType<typeof SearchInpMenu> | null>(null);
@@ -67,6 +67,15 @@ const noSideSpace = (value: string) => !value.startsWith(" ");
 const searchInputToFocus = () => {
   // searchInpRef.value?.focus();
   statusStore.searchFocus = true;
+};
+
+// 关闭搜索焦点（点击遮罩时）
+const closeSearchFocus = () => {
+  statusStore.searchFocus = false;
+  // 如果设置开启，关闭搜索焦点时清空搜索框
+  if (settingStore.clearSearchOnBlur) {
+    statusStore.searchInputValue = "";
+  }
 };
 
 // 添加搜索历史
@@ -105,6 +114,10 @@ const toSearch = async (key: any, type: string = "keyword") => {
   // 关闭搜索框
   statusStore.searchFocus = false;
   searchInputRef.value?.blur();
+  // 如果设置开启，搜索后清空搜索框
+  if (settingStore.clearSearchOnBlur) {
+    statusStore.searchInputValue = "";
+  }
   // 未输入内容且不存在推荐
   if (!key && searchPlaceholder.value === "搜索音乐 / 视频") return;
   if (!key && searchPlaceholder.value !== "搜索音乐 / 视频" && searchRealkeyword.value) {
@@ -164,9 +177,17 @@ const toSearch = async (key: any, type: string = "keyword") => {
   }
 };
 
+// 监听设置变化
+watch([() => settingStore.enableSearchKeyword, () => settingStore.useOnlineService], () => {
+  updatePlaceholder();
+});
+
 onMounted(() => {
-  // 每分钟更新
-  if (settingStore.useOnlineService && settingStore.enableSearchKeyword) {
+  // 确保在线服务开启
+  if (settingStore.useOnlineService) {
+    // 立即更新一次
+    updatePlaceholder();
+    // 开启定时器
     useIntervalFn(updatePlaceholder, 60 * 1000, { immediate: true });
   }
 });

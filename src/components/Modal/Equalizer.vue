@@ -39,9 +39,9 @@
 <script setup lang="ts">
 import { isElectron } from "@/utils/env";
 import { useStatusStore } from "@/stores";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
-const player = usePlayer();
+const player = usePlayerController();
 const statusStore = useStatusStore();
 
 type PresetKey = keyof typeof presetList;
@@ -102,7 +102,7 @@ const applyEq = () => {
   statusStore.setEqEnabled(enabled.value);
   statusStore.setEqBands(bands.value);
   if (enabled.value) {
-    player.enableEq({ bands: bands.value, frequencies });
+    player.updateEq({ bands: bands.value, frequencies });
   } else {
     player.disableEq();
   }

@@ -3,18 +3,22 @@ import { useEventListener } from "@vueuse/core";
 import { openUserAgreement } from "@/utils/modal";
 import { debounce } from "lodash-es";
 import { isElectron } from "./env";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
+import { mediaSessionManager } from "@/core/player/MediaSessionManager";
+import { useDownloadManager } from "@/core/resource/DownloadManager";
 import packageJson from "@/../package.json";
 import log from "./log";
 
 // 应用初始化时需要执行的操作
 const init = async () => {
   // init pinia-data
-  const player = usePlayer();
   const dataStore = useDataStore();
   const statusStore = useStatusStore();
   const settingStore = useSettingStore();
   const shortcutStore = useShortcutStore();
+
+  const player = usePlayerController();
+  const downloadManager = useDownloadManager();
 
   // 检查并执行设置迁移
   settingStore.checkAndMigrate();
@@ -30,21 +34,38 @@ const init = async () => {
   // 加载数据
   await dataStore.loadData();
 
+  // 初始化 MediaSession
+  mediaSessionManager.init();
+
   // 初始化播放器
-  player.initPlayer(
-    settingStore.autoPlay,
-    settingStore.memoryLastSeek ? statusStore.currentTime : 0,
-  );
+  player.playSong({
+    autoPlay: settingStore.autoPlay,
+    seek: settingStore.memoryLastSeek ? statusStore.currentTime : 0,
+  });
   // 同步播放模式
   player.playModeSyncIpc();
   // 初始化自动关闭定时器
   if (statusStore.autoClose.enable) {
-    player.startAutoCloseTimer(statusStore.autoClose.time, statusStore.autoClose.remainTime);
+    const { endTime, time } = statusStore.autoClose;
+    const now = Date.now();
+
+    if (endTime > now) {
+      // 计算真实剩余时间
+      const realRemainTime = Math.ceil((endTime - now) / 1000);
+      player.startAutoCloseTimer(time, realRemainTime);
+    } else {
+      // 定时器已过期，重置状态
+      statusStore.autoClose.enable = false;
+      statusStore.autoClose.remainTime = time * 60;
+      statusStore.autoClose.endTime = 0;
+    }
   }
 
   if (isElectron) {
     // 注册全局快捷键
     shortcutStore.registerAllShortcuts();
+    // 初始化下载管理器
+    downloadManager.init();
     // 显示窗口
     window.electron.ipcRenderer.send("win-loaded");
     // 显示桌面歌词
@@ -62,7 +83,7 @@ const initEventListener = () => {
 
 // 键盘事件
 const keyDownEvent = debounce((event: KeyboardEvent) => {
-  const player = usePlayer();
+  const player = usePlayerController();
   const shortcutStore = useShortcutStore();
   const statusStore = useStatusStore();
   const target = event.target as HTMLElement;
@@ -117,7 +138,7 @@ const keyDownEvent = debounce((event: KeyboardEvent) => {
         case "volumeDown":
           player.setVolume("down");
           break;
-        case "toogleDesktopLyric":
+        case "toggle-desktop-lyric":
           player.toggleDesktopLyric();
           break;
         case "openPlayer":

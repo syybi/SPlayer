@@ -23,6 +23,14 @@ const config: Configuration = {
   ],
   // 哪些文件将不会被压缩，而是解压到构建目录
   asarUnpack: ["public/**"],
+  // 将原生插件作为外部资源复制
+  extraResources: [
+    {
+      from: "native/external-media-integration",
+      to: "native",
+      filter: ["*.node"],
+    },
+  ],
   win: {
     // 可执行文件名
     executableName: "SPlayer",
@@ -84,7 +92,7 @@ const config: Configuration = {
     // 可执行文件名
     executableName: "SPlayer",
     // 应用程序的图标文件路径
-    icon: "public/icons/favicon-512x512.png",
+    icon: "public/icons/icon.icns",
     // 权限继承的文件路径
     entitlementsInherit: "build/entitlements.mac.plist",
     // macOS 平台全局文件名模板
@@ -153,10 +161,10 @@ const config: Configuration = {
         arch: ["x64", "arm64"],
       },
       // Snap 包管理器（仅支持 x64 架构）
-      {
-        target: "snap",
-        arch: ["x64"],
-      },
+      // {
+      //   target: "snap",
+      //   arch: ["x64"],
+      // },
       // 压缩包格式
       {
         target: "tar.gz",

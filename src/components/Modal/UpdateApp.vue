@@ -44,10 +44,10 @@ const downloadProgress = ref<number>(0);
 const handleMarkdownClick = (event: MouseEvent) => {
   const target = event.target as HTMLElement;
   // 从事件目标向上遍历，查找最近的 <a> 标签
-  const anchor = target.closest('a');
+  const anchor = target.closest("a");
   if (anchor?.href) {
     event.preventDefault();
-    window.open(anchor.href, '_blank');
+    window.open(anchor.href, "_blank");
   }
 };
 
@@ -76,7 +76,7 @@ const startDownload = async () => {
 // 前往下载
 const goDownload = () => {
   emit("close");
-  window.open(packageJson.github + "/releases", "_blank");
+  window.open("https://splayer.imsyy.top/download.html", "_blank");
 };
 </script>
 

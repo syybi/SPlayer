@@ -26,11 +26,13 @@ export const playlistAllSongs = (id: number, limit: number = 50, offset: number 
  * @param {number} id - 歌曲 id
  * @param {number} pid - 歌单 id
  * @param {number} sid - 要开始播放的歌曲的 id
+ * @param {AbortSignal} [signal] - 用于取消请求的信号
  */
-export const heartRateList = (id: number, pid: number, sid?: number) => {
+export const heartRateList = (id: number, pid: number, sid?: number, signal?: AbortSignal) => {
   return request({
     url: "/playmode/intelligence/list",
     params: { id, pid, sid, timestamp: Date.now() },
+    signal,
   });
 };
 

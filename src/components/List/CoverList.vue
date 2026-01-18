@@ -16,7 +16,7 @@
                   type === 'video' ? `${item.cover}?param=464y260` : item.coverSize?.m || item.cover
                 "
                 :default-src="
-                  type !== 'video' ? '/images/album.jpg?assest' : '/images/video.jpg?assest'
+                  type !== 'video' ? '/images/album.jpg?asset' : '/images/video.jpg?asset'
                 "
                 class="cover-img"
                 once
@@ -121,9 +121,9 @@ import { formatSongsList } from "@/utils/format";
 import { songDetail } from "@/api/song";
 import { playlistAllSongs } from "@/api/playlist";
 import { radioAllProgram } from "@/api/radio";
-import { usePlayer } from "@/utils/player";
-import CoverMenu from "@/components/Menu/CoverMenu.vue";
+import { usePlayerController } from "@/core/player/PlayerController";
 import { formatTimestamp } from "@/utils/time";
+import CoverMenu from "@/components/Menu/CoverMenu.vue";
 
 interface Props {
   data: CoverType[];
@@ -145,9 +145,9 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
-const player = usePlayer();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
+const player = usePlayerController();
 
 // 右键菜单
 const coverMenuRef = ref<InstanceType<typeof CoverMenu> | null>(null);

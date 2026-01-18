@@ -4,6 +4,7 @@
       :data="data"
       :loading="loading"
       :hidden-cover="!settingStore.showLocalCover"
+      :list-version="listVersion"
       @removeSong="handleRemoveSong"
     />
   </div>
@@ -19,6 +20,7 @@ const settingStore = useSettingStore();
 defineProps<{
   data: SongType[];
   loading: boolean;
+  listVersion?: number;
 }>();
 
 // 处理删除歌曲

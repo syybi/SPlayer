@@ -11,7 +11,7 @@
       >
         <template #placeholder>
           <div class="cover-loading">
-            <img src="/images/song.jpg?assest" class="loading-img" alt="loading-img" />
+            <img src="/images/song.jpg?asset" class="loading-img" alt="loading-img" />
           </div>
         </template>
       </n-image>
@@ -243,6 +243,14 @@ onMounted(() => {
   }
   .comment-list {
     margin: 0 auto;
+    :deep(.comments) {
+      .text {
+        &::selection {
+          color: rgb(var(--main-cover-color));
+          background-color: rgba(var(--main-cover-color), 0.2);
+        }
+      }
+    }
   }
   .placeholder {
     width: 100%;

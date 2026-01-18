@@ -15,7 +15,7 @@
           >
             <template #placeholder>
               <div class="cover-loading">
-                <img src="/images/album.jpg?assest" class="loading-img" alt="loading-img" />
+                <img src="/images/album.jpg?asset" class="loading-img" alt="loading-img" />
               </div>
             </template>
           </n-image>
@@ -70,16 +70,20 @@
                 <div
                   v-if="config.showArtist && Array.isArray(detailData.artists)"
                   class="artists text-hidden"
-                  @click="handleArtistClick(detailData.artists)"
                 >
-                  <n-text v-for="(ar, arIndex) in detailData.artists" :key="arIndex" class="ar">
+                  <n-text
+                    v-for="(ar, arIndex) in detailData.artists"
+                    :key="arIndex"
+                    class="ar"
+                    @click="openJumpArtist(detailData.artists, ar.id)"
+                  >
                     {{ ar.name || "未知艺术家" }}
                   </n-text>
                 </div>
                 <div
                   v-else-if="config.showArtist"
                   class="artists text-hidden"
-                  @click="handleArtistClick(detailData.artists || '')"
+                  @click="openJumpArtist(detailData.artists || '')"
                 >
                   <n-text class="ar"> {{ detailData.artists || "未知艺术家" }} </n-text>
                 </div>
@@ -265,11 +269,6 @@ const handleSearch = (val: string) => {
   emit("update:searchValue", val);
 };
 
-// 处理艺术家点击
-const handleArtistClick = (artists: any) => {
-  openJumpArtist(artists);
-};
-
 // 处理标签点击
 const handleTagClick = (tag: string) => {
   router.push({
@@ -303,7 +302,7 @@ const handleTabChange = (value: "songs" | "comments") => {
     display: flex;
     height: 240px;
     width: 100%;
-    padding: 12px 0 30px 0;
+    padding: 12px 0 24px 0;
     will-change: height, opacity;
     z-index: 1;
     transition:

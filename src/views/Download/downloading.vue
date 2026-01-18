@@ -73,10 +73,11 @@
             <!-- 操作 -->
             <n-flex align="center" justify="center" class="actions">
               <n-button
+                v-if="item.status !== 'downloading'"
                 type="primary"
                 secondary
                 strong
-                @click="DownloadManager.retryDownload(item.song.id)"
+                @click="downloadManager.retryDownload(item.song.id)"
               >
                 <template #icon>
                   <SvgIcon name="Refresh" />
@@ -86,7 +87,7 @@
                 type="error"
                 secondary
                 strong
-                @click="DownloadManager.removeDownload(item.song.id)"
+                @click="handleRemoveDownload(item.song.id)"
               >
                 <template #icon>
                   <SvgIcon name="Close" />
@@ -103,10 +104,10 @@
 
 <script setup lang="ts">
 import { useDataStore } from "@/stores";
-import DownloadManager from "@/utils/downloadManager";
+import { useDownloadManager } from "@/core/resource/DownloadManager";
 
 const dataStore = useDataStore();
-
+const downloadManager = useDownloadManager();
 const sortedDownloadingSongs = computed(() => {
   return [...dataStore.downloadingSongs].sort((a, b) => {
     // 优先级: 下载中 (1) > 等待中 (2) > 失败 (3)
@@ -118,6 +119,11 @@ const sortedDownloadingSongs = computed(() => {
     return getPriority(a.status) - getPriority(b.status);
   });
 });
+
+const handleRemoveDownload = (id: number) => {
+  downloadManager.removeDownload(id);
+  window.$message.success("已删除下载任务");
+};
 </script>
 
 <style lang="scss" scoped>

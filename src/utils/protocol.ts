@@ -1,6 +1,6 @@
 import { songDetail } from "@/api/song";
 import { formatSongsList } from "@/utils/format";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
 class OrpheusData {
   constructor(type: string, id: number, cmd: string) {
@@ -43,7 +43,7 @@ export const handleOpenOrpheus = async (url: string) => {
   console.log("🚀 Open Orpheus:", data);
 
   if (data.cmd === "play" && data.type === "song") {
-    const player = usePlayer();
+    const player = usePlayerController();
     const result = await songDetail(data.id);
     const song = formatSongsList(result.songs)[0];
     player.addNextSong(song, true);

@@ -66,9 +66,9 @@
 <script setup lang="ts">
 import { useStatusStore } from "@/stores";
 import { convertSecondsToTime } from "@/utils/time";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
-const player = usePlayer();
+const player = usePlayerController();
 const statusStore = useStatusStore();
 
 // 自定义时长
@@ -81,6 +81,7 @@ const handleUpdate = (value: boolean) => {
   } else {
     statusStore.autoClose.enable = false;
     statusStore.autoClose.remainTime = statusStore.autoClose.time * 60;
+    statusStore.autoClose.endTime = 0;
   }
 };
 </script>

@@ -58,9 +58,9 @@
 
 <script setup lang="ts">
 import { useDataStore } from "@/stores";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
-const player = usePlayer();
+const player = usePlayerController();
 const dataStore = useDataStore();
 
 // 清空最近播放

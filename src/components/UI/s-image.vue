@@ -15,6 +15,7 @@
       :class="['cover', { loaded: isLoaded }]"
       :decoding="decodeAsync ? 'async' : 'auto'"
       :loading="nativeLazy ? 'lazy' : 'eager'"
+      :style="{ objectFit: objectFit }"
       @load="imageLoaded"
       @error="imageError"
     />
@@ -27,6 +28,8 @@ const props = withDefaults(
     src: string | undefined;
     defaultSrc?: string;
     alt?: string;
+    // 图片填充方式
+    objectFit?: "cover" | "contain" | "fill" | "none" | "scale-down";
     // 是否进行可视状态变化
     observeVisibility?: boolean;
     // 在不可视时是否释放图片以回收内存
@@ -37,11 +40,12 @@ const props = withDefaults(
     nativeLazy?: boolean;
   }>(),
   {
-    defaultSrc: "/images/song.jpg?assest",
+    defaultSrc: "/images/song.jpg?asset",
     observeVisibility: true,
     releaseOnHide: false,
     decodeAsync: true,
     nativeLazy: true,
+    objectFit: "cover",
   },
 );
 

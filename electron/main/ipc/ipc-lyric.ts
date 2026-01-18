@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, screen } from "electron";
 import { useStore } from "../store";
+import { isLinux } from "../utils/config";
 import lyricWindow from "../windows/lyric-window";
 import mainWindow from "../windows/main-window";
 
@@ -11,6 +12,10 @@ const initLyricIpc = (): void => {
 
   // 歌词窗口
   let lyricWin: BrowserWindow | null = null;
+  // 是否锁定（从配置读取）
+  let isLocked = store.get("lyric.config")?.isLock ?? false;
+  // 恢复 forward 的定时器
+  let restoreTimer: NodeJS.Timeout | null = null;
 
   /**
    * 窗口是否存活
@@ -20,6 +25,76 @@ const initLyricIpc = (): void => {
   const isWinAlive = (win: BrowserWindow | null): win is BrowserWindow =>
     !!win && !win.isDestroyed();
 
+  /**
+   * 设置歌词窗口鼠标事件穿透
+   * @param enableForward 是否启用 forward（传递鼠标事件到网页，用于悬浮显示解锁按钮）
+   */
+  const setLyricMouseEvents = (enableForward: boolean) => {
+    if (!isWinAlive(lyricWin) || !isLocked) return;
+    lyricWin.setIgnoreMouseEvents(true, enableForward ? { forward: true } : undefined);
+  };
+
+  // 主窗口移动/调整大小中：立即禁用 forward，并启动防抖恢复
+  const onMoveOrResize = () => {
+    if (!isLocked) return;
+    // 立即禁用 forward
+    setLyricMouseEvents(false);
+    // 防抖恢复：300ms 内无新事件则恢复
+    restoreTimer && clearTimeout(restoreTimer);
+    restoreTimer = setTimeout(() => setLyricMouseEvents(true), 300);
+  };
+
+  // 主窗口移动/调整大小结束：立即恢复 forward（仅 Windows/macOS 支持）
+  const onMoveOrResizeEnd = () => {
+    if (!isLocked) return;
+    restoreTimer && clearTimeout(restoreTimer);
+    setLyricMouseEvents(true);
+  };
+
+  /**
+   * 绑定主窗口事件监听
+   * 监听 move 和 resize 事件，在操作时禁用 forward
+   */
+  const bindMainWinEvents = () => {
+    const mainWin = mainWindow.getWin();
+    if (!mainWin) return;
+
+    // 监听 move（移动中，所有平台）
+    mainWin.on("move", onMoveOrResize);
+    // 监听 resize（调整大小中，所有平台）
+    mainWin.on("resize", onMoveOrResize);
+
+    // Linux 不支持 moved/resized 事件，仅在 Windows/macOS 上监听
+    if (!isLinux) {
+      // 监听 moved（移动结束，Windows/macOS）
+      mainWin.on("moved", onMoveOrResizeEnd);
+      // 监听 resized（调整大小结束，Windows/macOS）
+      mainWin.on("resized", onMoveOrResizeEnd);
+    }
+  };
+
+  /**
+   * 解绑主窗口事件监听
+   */
+  const unbindMainWinEvents = () => {
+    const mainWin = mainWindow.getWin();
+    if (!mainWin) return;
+
+    // 移除此模块添加的事件
+    mainWin.removeListener("move", onMoveOrResize);
+    mainWin.removeListener("resize", onMoveOrResize);
+
+    // Linux 不支持 moved/resized 事件，仅在 Windows/macOS 上移除
+    if (!isLinux) {
+      mainWin.removeListener("moved", onMoveOrResizeEnd);
+      mainWin.removeListener("resized", onMoveOrResizeEnd);
+    }
+
+    // 清理定时器
+    restoreTimer && clearTimeout(restoreTimer);
+    restoreTimer = null;
+  };
+
   // 切换桌面歌词
   ipcMain.on("toggle-desktop-lyric", (_event, val: boolean) => {
     if (val) {
@@ -27,6 +102,7 @@ const initLyricIpc = (): void => {
         lyricWin = lyricWindow.create();
         // 监听关闭，置空引用，防止后续调用报错
         lyricWin?.on("closed", () => {
+          unbindMainWinEvents();
           lyricWin = null;
         });
         // 设置位置
@@ -36,6 +112,8 @@ const initLyricIpc = (): void => {
         if (Number.isFinite(xPos) && Number.isFinite(yPos)) {
           lyricWin?.setPosition(Math.round(xPos), Math.round(yPos));
         }
+        // 绑定主窗口事件监听
+        bindMainWinEvents();
       } else {
         lyricWin.show();
       }
@@ -43,9 +121,10 @@ const initLyricIpc = (): void => {
         lyricWin.setAlwaysOnTop(true, "screen-saver");
       }
     } else {
-      // 关闭：不销毁窗口，直接隐藏，保留位置与状态
       if (!isWinAlive(lyricWin)) return;
-      lyricWin.hide();
+      // 解绑事件
+      unbindMainWinEvents();
+      lyricWin.close();
     }
   });
 
@@ -167,23 +246,28 @@ const initLyricIpc = (): void => {
   });
 
   // 关闭桌面歌词
-  ipcMain.on("closeDesktopLyric", () => {
+  ipcMain.on("close-desktop-lyric", () => {
     const mainWin = mainWindow.getWin();
     if (!isWinAlive(lyricWin) || !isWinAlive(mainWin)) return;
     lyricWin.hide();
-    mainWin?.webContents.send("closeDesktopLyric");
+    mainWin?.webContents.send("close-desktop-lyric");
   });
 
   // 锁定/解锁桌面歌词
-  ipcMain.on("toogleDesktopLyricLock", (_, isLock: boolean, isTemp: boolean = false) => {
+  ipcMain.on("toggle-desktop-lyric-lock", (_, isLock: boolean, isTemp: boolean = false) => {
     const mainWin = mainWindow.getWin();
     if (!isWinAlive(lyricWin) || !isWinAlive(mainWin)) return;
-    // 是否穿透
+
+    // 更新锁定状态
+    if (!isTemp) isLocked = isLock;
+
+    // 设置鼠标事件穿透
     if (isLock) {
       lyricWin.setIgnoreMouseEvents(true, { forward: true });
     } else {
       lyricWin.setIgnoreMouseEvents(false);
     }
+
     if (isTemp) return;
     store.set("lyric.config", { ...store.get("lyric.config"), isLock });
     // 触发窗口更新

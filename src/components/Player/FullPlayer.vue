@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <Transition name="up" mode="out-in">
+    <Transition :name="settingStore.playerExpandAnimation" mode="out-in">
       <div
         v-if="statusStore.showFullPlayer"
         :style="{
@@ -10,7 +10,7 @@
         @mouseleave="playerLeave"
       >
         <!-- 背景 -->
-        <PlayerBackground />
+        <PlayerBackground :delayAnimation="!isBackgroundReady" />
         <!-- 独立歌词 -->
         <Transition name="fade" mode="out-in">
           <div
@@ -27,6 +27,7 @@
         <!-- 主内容 -->
         <Transition name="zoom" mode="out-in">
           <div
+            v-if="isContentReady"
             :key="playerContentKey"
             :class="[
               'player-content',
@@ -54,11 +55,8 @@
                 :light="pureLyricMode"
               />
               <!-- 歌词 -->
-              <MainAMLyric
-                v-if="settingStore.useAMLyrics"
-                :key="`am-lyric-${musicStore.playSong.id}`"
-              />
-              <MainLyric v-else :key="`lyric-${musicStore.playSong.id}`" />
+              <MainAMLyric v-if="settingStore.useAMLyrics" />
+              <MainLyric v-else />
             </div>
           </div>
         </Transition>
@@ -88,8 +86,12 @@ const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
 
+/** 延迟渲染控制 */
+const isContentReady = ref(false);
+const isBackgroundReady = ref(false);
+
 /** 封面主颜色 */
-const mainCoverColor = useCssVar("--main-cover-color", document.body);
+const mainCoverColor = useCssVar("--main-cover-color", document.documentElement);
 
 // 是否显示评论
 const isShowComment = computed<boolean>(
@@ -185,6 +187,11 @@ onMounted(() => {
   if (isElectron && settingStore.preventSleep) {
     window.electron.ipcRenderer.send("prevent-sleep", true);
   }
+  // 延迟渲染
+  setTimeout(() => {
+    isContentReady.value = true;
+    isBackgroundReady.value = true;
+  }, 300);
 });
 
 onBeforeUnmount(() => {

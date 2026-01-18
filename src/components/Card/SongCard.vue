@@ -28,7 +28,7 @@
           @update:show="localCover"
         />
         <!-- 信息 -->
-        <div class="info">
+        <n-flex size="small" class="info" vertical>
           <!-- 名称 -->
           <div class="name">
             <n-ellipsis
@@ -40,7 +40,10 @@
               class="name-text"
             >
               {{ song?.name || "未知曲目" }}
+              <n-text v-if="song.alia?.length" class="alia" depth="3"> ({{ song.alia }}) </n-text>
             </n-ellipsis>
+          </div>
+          <n-flex :size="4" :wrap="false" class="desc" align="center">
             <!-- 音质 -->
             <n-tag
               v-if="song?.quality && settingStore.showSongQuality"
@@ -86,27 +89,25 @@
             >
               MV
             </n-tag>
-          </div>
-          <!-- 歌手 -->
-          <div v-if="Array.isArray(song.artists)" class="artists text-hidden">
-            <n-text
-              v-for="ar in song.artists"
-              :key="ar.id"
-              class="ar"
-              @click="openJumpArtist(song.artists)"
-            >
-              {{ ar.name }}
-            </n-text>
-          </div>
-          <div v-else-if="song.type === 'radio'" class="artists">
-            <n-text class="ar"> 电台节目 </n-text>
-          </div>
-          <div v-else class="artists text-hidden" @click="openJumpArtist(song.artists)">
-            <n-text class="ar"> {{ song.artists || "未知艺术家" }} </n-text>
-          </div>
-          <!-- 别名 -->
-          <n-text v-if="song.alia" class="alia text-hidden" depth="3">{{ song.alia }}</n-text>
-        </div>
+            <!-- 歌手 -->
+            <div v-if="Array.isArray(song.artists)" class="artists text-hidden">
+              <n-text
+                v-for="ar in song.artists"
+                :key="ar.id"
+                class="ar"
+                @click="openJumpArtist(song.artists, ar.id)"
+              >
+                {{ ar.name }}
+              </n-text>
+            </div>
+            <div v-else-if="song.type === 'radio'" class="artists">
+              <n-text class="ar"> 电台节目 </n-text>
+            </div>
+            <div v-else class="artists text-hidden" @click="openJumpArtist(song.artists)">
+              <n-text class="ar"> {{ song.artists || "未知艺术家" }} </n-text>
+            </div>
+          </n-flex>
+        </n-flex>
       </div>
       <!-- 专辑 -->
       <div v-if="song.type !== 'radio' && !hiddenAlbum" class="album text-hidden">
@@ -162,9 +163,9 @@ import { openJumpArtist } from "@/utils/modal";
 import { toLikeSong } from "@/utils/auth";
 import { isObject } from "lodash-es";
 import { formatTimestamp, msToTime } from "@/utils/time";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 import { isElectron } from "@/utils/env";
-import blob from "@/utils/blob";
+import { useBlobURLManager } from "@/core/resource/BlobURLManager";
 
 const props = defineProps<{
   // 歌曲
@@ -178,11 +179,13 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const player = usePlayer();
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
+
+const player = usePlayerController();
+const blobURLManager = useBlobURLManager();
 
 // 歌曲数据
 const song = toRef(props, "song");
@@ -197,20 +200,38 @@ const qualityColor = computed(() => {
 
 // 加载本地歌曲封面
 const localCover = async (show: boolean) => {
-  if (!isElectron || !show || !song.value.path) return;
-  if (song.value.cover || song.value.cover === "/images/song.jpg?assest") return;
+  if (!isElectron || !show) return;
+  // 本地路径
+  const path = song.value.path;
+  if (!path) return;
+  // 当前封面
+  const currentCover = song.value.cover;
+  // 直接复用
+  if (
+    currentCover &&
+    currentCover !== "/images/song.jpg?asset" &&
+    !currentCover.startsWith("blob:")
+  ) {
+    return;
+  }
+  // 缓存生效
+  if (blobURLManager.hasBlobURL(path)) return;
+  // 请求路径
+  const requestPath = path;
   // 获取封面
-  const coverData = await window.electron.ipcRenderer.invoke("get-music-cover", song.value.path);
-  if (!coverData) return;
+  const coverData = await window.electron.ipcRenderer.invoke("get-music-cover", requestPath);
+  if (song.value.path !== requestPath || !coverData) return;
   const { data, format } = coverData;
-  const blobURL = blob.createBlobURL(data, format, song.value.path);
-  if (blobURL) song.value.cover = blobURL;
+  const blobURL = blobURLManager.createBlobURL(data, format, requestPath);
+  if (blobURL && song.value.path === requestPath) {
+    song.value.cover = blobURL;
+  }
 };
 </script>
 
 <style lang="scss" scoped>
 .song-card {
-  height: 100%;
+  height: 90px;
   cursor: pointer;
   .song-content {
     display: flex;
@@ -222,10 +243,10 @@ const localCover = async (show: boolean) => {
     border-radius: 12px;
     border: 2px solid rgba(var(--primary), 0.12);
     background-color: var(--surface-container-hex);
-    // transition:
-    //   transform 0.1s,
-    //   background-color 0.3s var(--n-bezier),
-    //   border-color 0.3s var(--n-bezier);
+    transition:
+      transform 0.1s,
+      background-color 0.3s var(--n-bezier),
+      border-color 0.3s var(--n-bezier);
     &.play {
       border-color: rgba(var(--primary), 0.58);
       background-color: rgba(var(--primary), 0.28);
@@ -305,21 +326,20 @@ const localCover = async (show: boolean) => {
       overflow: hidden;
     }
     .info {
-      display: flex;
-      flex-direction: column;
       .name {
         display: flex;
         flex-direction: row;
         align-items: center;
+        line-height: normal;
         font-size: 16px;
-        :deep(.name-text) {
-          margin-right: 6px;
-        }
+      }
+      .desc {
+        margin-top: 2px;
+        font-size: 13px;
         .n-tag {
-          --n-height: 20px;
-          font-size: 12px;
+          --n-height: 18px;
+          font-size: 10px;
           cursor: pointer;
-          margin-right: 6px;
           pointer-events: none;
           &:last-child {
             margin-right: 0;
@@ -346,8 +366,6 @@ const localCover = async (show: boolean) => {
         }
       }
       .artists {
-        margin-top: 2px;
-        font-size: 13px;
         .ar {
           display: inline-flex;
           transition: opacity 0.3s;
@@ -366,11 +384,6 @@ const localCover = async (show: boolean) => {
             opacity: 0.8;
           }
         }
-      }
-      .alia {
-        margin-top: 2px;
-        font-size: 12px;
-        opacity: 0.8;
       }
     }
     .sort {
@@ -400,6 +413,7 @@ const localCover = async (show: boolean) => {
     justify-content: center;
     width: 40px;
     .n-icon {
+      color: var(--primary-hex);
       transition: transform 0.3s;
       cursor: pointer;
       &:hover {

@@ -1,17 +1,9 @@
-import { app, type BrowserWindow } from "electron";
+import { type BrowserWindow } from "electron";
 import { updateLog } from "../logger";
 import electronUpdater from "electron-updater";
-import { isDev } from "../utils/config";
 
 // import
 const { autoUpdater } = electronUpdater;
-
-// 开发环境启用
-if (isDev) {
-  Object.defineProperty(app, "isPackaged", {
-    get: () => true,
-  });
-}
 
 // 更新源
 autoUpdater.setFeedURL({

@@ -110,6 +110,14 @@ const playButtonText = computed(() => {
 // 更多操作
 const moreOptions = computed<DropdownOption[]>(() => [
   {
+    label: "刷新缓存",
+    key: "refresh",
+    props: {
+      onClick: () => getPlaylistDetail(playlistId.value, { getList: true, refresh: true }),
+    },
+    icon: renderIcon("Refresh"),
+  },
+  {
     label: "编辑歌单",
     key: "edit",
     props: {
@@ -232,6 +240,31 @@ const loadLikedCache = () => {
   }
 };
 
+/**
+ * 检查缓存是否需要更新
+ * 通过比较 userLikeData.songs 的 ID 列表与缓存的歌曲 ID 来判断
+ */
+const checkNeedsUpdate = (): boolean => {
+  const likedIds = dataStore.userLikeData.songs;
+  const cachedIds = dataStore.likeSongsList.data.map((s) => s.id);
+  // 如果长度不同，肯定需要更新
+  if (likedIds.length !== cachedIds.length) {
+    console.log(
+      `🔄 Liked cache needs update: count changed (${cachedIds.length} -> ${likedIds.length})`,
+    );
+    return true;
+  }
+  // 比较 ID 集合是否完全相同（顺序可能不同）
+  const likedSet = new Set(likedIds);
+  const allMatch = cachedIds.every((id) => likedSet.has(id));
+  if (!allMatch) {
+    console.log("🔄 Liked cache needs update: song IDs changed");
+    return true;
+  }
+  console.log("✅ Liked cache is up to date");
+  return false;
+};
+
 // 获取歌单全部歌曲
 const getPlaylistAllSongs = async (
   id: number,
@@ -312,11 +345,15 @@ const removeSong = (ids: number[]) => {
   setListData(listData.value.filter((song) => !ids.includes(song.id)));
 };
 
-onActivated(() => {
+onActivated(async () => {
   if (!isActivated.value) {
     isActivated.value = true;
   } else {
-    getPlaylistDetail(playlistId.value, { getList: true, refresh: true });
+    // 检查是否需要更新缓存
+    const needsUpdate = checkNeedsUpdate();
+    if (needsUpdate) {
+      getPlaylistDetail(playlistId.value, { getList: true, refresh: true });
+    }
   }
 });
 

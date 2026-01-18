@@ -2,8 +2,8 @@
 <template>
   <div class="album-list">
     <ListDetail
-      :detail-data="detailData"
-      :list-data="listData"
+      :detail-data="detailData?.id === albumId ? detailData : null"
+      :list-data="detailData?.id === albumId ? listData : []"
       :loading="showLoading"
       :list-scrolling="listScrolling"
       :search-value="searchValue"
@@ -35,7 +35,7 @@
       <template v-if="currentTab === 'songs'">
         <SongList
           v-if="!searchValue || searchData?.length"
-          :data="displayData"
+          :data="detailData?.id === albumId ? displayData : []"
           :loading="loading"
           :height="songListHeight"
           :doubleClickAction="searchData?.length ? 'add' : 'all'"
@@ -67,16 +67,20 @@ import { songDetail } from "@/api/song";
 import { albumDetail } from "@/api/album";
 import { formatCoverList, formatSongsList } from "@/utils/format";
 import { renderIcon, copyData } from "@/utils/helper";
+import { openBatchList } from "@/utils/modal";
 import { useDataStore } from "@/stores";
 import { toLikeAlbum } from "@/utils/auth";
 import { useListDetail } from "@/composables/List/useListDetail";
 import { useListSearch } from "@/composables/List/useListSearch";
 import { useListScroll } from "@/composables/List/useListScroll";
 import { useListActions } from "@/composables/List/useListActions";
+import { useListDataCache, type ListCacheData } from "@/composables/List/useListDataCache";
 import ListComment from "@/components/List/ListComment.vue";
 
 const router = useRouter();
 const dataStore = useDataStore();
+
+const { saveCache, loadCache, checkNeedsUpdate } = useListDataCache();
 
 // 是否激活
 const isActivated = ref<boolean>(false);
@@ -97,7 +101,11 @@ const { listScrolling, handleListScroll, resetScroll } = useListScroll();
 const { playAllSongs: playAllSongsAction } = useListActions();
 
 // 专辑 ID
+const oldAlbumId = ref<number>(0);
 const albumId = computed<number>(() => Number(router.currentRoute.value.query.id as string));
+
+// 当前正在请求的专辑 ID，用于防止竞态条件
+const currentRequestId = ref<number>(0);
 
 // 是否处于收藏专辑
 const isLikeAlbum = computed(() =>
@@ -133,6 +141,24 @@ const playButtonText = computed(() => {
 
 // 更多操作
 const moreOptions = computed<DropdownOption[]>(() => [
+    {
+    label: "刷新缓存",
+    key: "refresh",
+    props: {
+      onClick: () => getAlbumDetail(albumId.value, true),
+    },
+    icon: renderIcon("Refresh"),
+  },
+  {
+    label: "批量操作",
+    key: "batch",
+    props: {
+      onClick: () => {
+        openBatchList(displayData.value, false, isLikeAlbum.value ? albumId.value : undefined);
+      },
+    },
+    icon: renderIcon("Batch"),
+  },
   {
     label: "复制分享链接",
     key: "copy",
@@ -157,19 +183,63 @@ const moreOptions = computed<DropdownOption[]>(() => [
 // 获取专辑基础信息
 const getAlbumDetail = async (id: number, refresh: boolean = false) => {
   if (!id) return;
+  // 设置当前请求的专辑 ID，用于防止竞态条件
+  currentRequestId.value = id;
   setLoading(true);
   clearSearch();
+
+  // 1. 尝试读取缓存
   if (!refresh) {
+    const cached = await loadCache("album", id);
+    if (cached) {
+      setDetailData(cached.detail);
+      setListData(cached.songs);
+      setLoading(false);
+
+      // 后台检查更新
+      backgroundCheck(id, cached);
+      return;
+    }
+  }
+
+  if (!refresh && detailData.value?.id !== id) {
     resetData(true);
   }
   // 获取专辑详情
   const detail = await albumDetail(id);
+  // 检查是否仍然是当前请求的专辑
+  if (currentRequestId.value !== id) return;
   setDetailData(formatCoverList(detail.album)[0]);
   // 获取专辑歌曲
   const ids: number[] = detail.songs.map((song: any) => song.id as number);
   const result = await songDetail(ids);
-  setListData(formatSongsList(result.songs));
+  // 再次检查是否仍然是当前请求的专辑
+  if (currentRequestId.value !== id) return;
+  const songs = formatSongsList(result.songs);
+  setListData(songs);
+
+  // 保存缓存
+  saveCache("album", id, detailData.value!, songs);
+
   setLoading(false);
+};
+
+// 后台检查更新
+const backgroundCheck = async (id: number, cached: ListCacheData) => {
+  try {
+    const detail = await albumDetail(id);
+    // 检查是否仍然是当前请求的专辑
+    if (currentRequestId.value !== id) return;
+
+    const latestDetail = formatCoverList(detail.album)[0];
+
+    if (checkNeedsUpdate(cached, latestDetail)) {
+      console.log("Album cache expired, refreshing...");
+      getAlbumDetail(id, true);
+    }
+  } catch (e) {
+    console.error("Album background check failed", e);
+  }
 };
 
 // 处理搜索更新
@@ -199,9 +269,8 @@ onActivated(() => {
   if (!isActivated.value) {
     isActivated.value = true;
   } else {
-    // 是否相同专辑
-    const isSame = detailData.value?.id === albumId.value;
-    getAlbumDetail(albumId.value, isSame);
+    oldAlbumId.value = albumId.value;
+    getAlbumDetail(albumId.value, false);
   }
 });
 

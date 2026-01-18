@@ -9,16 +9,14 @@
         @click="chooseAlbum = key"
       >
         <Transition name="fade" mode="out-in">
-          <n-image
+          <s-image
             :key="item?.[0]?.cover"
-            :src="item?.[0]?.cover || '/images/album.jpg?assest'"
-            preview-disabled
+            :src="item?.[0]?.cover || '/images/album.jpg?asset'"
             class="cover"
-            v-visible.once="(show: boolean) => loadAlbumCover(show, key)"
           />
         </Transition>
         <div class="data">
-          <n-text class="name">{{ key }}</n-text>
+          <n-text class="name">{{ key || "未知专辑" }}</n-text>
           <n-text class="num" depth="3">
             <SvgIcon name="Music" :depth="3" />
             {{ item.length }} 首
@@ -29,8 +27,8 @@
     <Transition name="fade" mode="out-in">
       <SongList
         :key="chooseAlbum"
-        :data="chooseAlbum ? albumData[chooseAlbum] : []"
-        :loading="true"
+        :data="albumSongs"
+        :loading="albumSongs?.length ? false : true"
         @removeSong="handleRemoveSong"
         hidden-cover
       />
@@ -42,15 +40,22 @@
 import type { SongType } from "@/types/main";
 import { useLocalStore } from "@/stores";
 import { some } from "lodash-es";
-import blob from "@/utils/blob";
+import { usePlayerController } from "@/core/player/PlayerController";
 
 const props = defineProps<{ data: SongType[] }>();
 
 const localStore = useLocalStore();
+const player = usePlayerController();
+
+// 播放事件总线
+const localPlayEventBus = useEventBus("local-play");
 
 // 专辑数据
 const chooseAlbum = ref<string>("");
 const albumData = computed<Record<string, SongType[]>>(() => formatArtistsList(props.data));
+
+// 对应专辑歌曲
+const albumSongs = computed<SongType[]>(() => albumData.value?.[chooseAlbum.value] || []);
 
 // 区分专辑数据
 const formatArtistsList = (data: SongType[]): Record<string, SongType[]> => {
@@ -78,24 +83,19 @@ const formatArtistsList = (data: SongType[]): Record<string, SongType[]> => {
   return sortedAllAlbums;
 };
 
-// 加载专辑封面
-const loadAlbumCover = async (show: boolean, key: string) => {
-  if (!show) return;
-  const path = albumData.value?.[key]?.[0]?.path;
-  if (!path) return;
-  const coverData = await window.electron.ipcRenderer.invoke("get-music-cover", path);
-  if (!coverData) return;
-  const { data, format } = coverData;
-  const blobURL = blob.createBlobURL(data, format, path);
-  if (blobURL) albumData.value[key][0].cover = blobURL;
-};
-
 // 处理删除歌曲
 const handleRemoveSong = (ids: number[]) => {
   // 从本地歌曲列表中删除指定ID的歌曲
   const updatedSongs = localStore.localSongs.filter((song) => !ids.includes(song.id));
   localStore.updateLocalSong(updatedSongs);
 };
+
+// 监听播放事件
+const router = useRouter();
+localPlayEventBus.on(() => {
+  if (router.currentRoute.value?.name !== "local-albums") return;
+  player.updatePlayList(albumSongs.value);
+});
 
 watch(
   () => chooseAlbum.value,

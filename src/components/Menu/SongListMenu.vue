@@ -18,8 +18,8 @@
 <script setup lang="ts">
 import type { SongType } from "@/types/main";
 import { NAlert, type DropdownOption } from "naive-ui";
-import { useStatusStore, useDataStore, useMusicStore } from "@/stores";
-import DownloadManager from "@/utils/downloadManager";
+import { useStatusStore, useDataStore, useMusicStore, useSettingStore } from "@/stores";
+import { useDownloadManager } from "@/core/resource/DownloadManager";
 import { renderIcon, copyData } from "@/utils/helper";
 import { deleteCloudSong, importCloudSong } from "@/api/cloud";
 import {
@@ -32,15 +32,18 @@ import { deleteSongs, isLogin } from "@/utils/auth";
 import { songUrl } from "@/api/song";
 import { dailyRecommendDislike } from "@/api/rec";
 import { formatSongsList } from "@/utils/format";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
 const emit = defineEmits<{ removeSong: [index: number[]] }>();
 
 const router = useRouter();
-const player = usePlayer();
 const dataStore = useDataStore();
-const statusStore = useStatusStore();
 const musicStore = useMusicStore();
+const statusStore = useStatusStore();
+
+const player = usePlayerController();
+const downloadManager = useDownloadManager();
+const settingStore = useSettingStore();
 
 // 右键菜单数据
 const dropdownX = ref<number>(0);
@@ -240,6 +243,7 @@ const openDropdown = (
         {
           key: "search",
           label: "同名搜索",
+          show: settingStore.useOnlineService,
           props: {
             onClick: () => router.push({ name: "search", query: { keyword: song.name } }),
           },
@@ -248,15 +252,15 @@ const openDropdown = (
         {
           key: "download",
           label: "下载歌曲",
-          show: !isLocal && type === "song" && !isDownloading,
+          show: statusStore.isDeveloperMode && !isLocal && type === "song" && !isDownloading,
           props: { onClick: () => openDownloadSong(song) },
           icon: renderIcon("Download"),
         },
         {
           key: "retry-download",
           label: "重试下载",
-          show: isDownloading,
-          props: { onClick: () => DownloadManager.retryDownload(song.id) },
+          show: statusStore.isDeveloperMode && isDownloading,
+          props: { onClick: () => downloadManager.retryDownload(song.id) },
           icon: renderIcon("Refresh"),
         },
       ];

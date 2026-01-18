@@ -3,7 +3,6 @@ import type { SongType } from "@/types/main";
 import { isElectron } from "@/utils/env";
 import { cloneDeep } from "lodash-es";
 import { SongLyric } from "@/types/lyric";
-import blob from "@/utils/blob";
 
 interface MusicState {
   playSong: SongType;
@@ -25,7 +24,7 @@ const defaultMusicData: SongType = {
   name: "未播放歌曲",
   artists: "未知歌手",
   album: "未知专辑",
-  cover: "/images/song.jpg?assest",
+  cover: "/images/song.jpg?asset",
   duration: 0,
   free: 0,
   mv: null,
@@ -67,7 +66,7 @@ export const useMusicStore = defineStore("music", {
     isHasPlayer(state): boolean {
       return state.playSong?.id !== 0;
     },
-    // 歌曲封面
+    /** 歌曲封面 */
     songCover(state): string {
       return state.playSong.path
         ? state.playSong.cover
@@ -81,16 +80,11 @@ export const useMusicStore = defineStore("music", {
   actions: {
     /** 重置音乐数据 */
     resetMusicData() {
-      // 清理旧的 blob URL（如果 cover 是 blob URL）
-      const oldCover = this.playSong.cover;
-      const oldPath = this.playSong.path;
-      if (oldCover && oldCover.startsWith("blob:") && oldPath) {
-        blob.revokeBlobURL(oldPath);
-      }
       this.playSong = { ...defaultMusicData };
+      this.playPlaylistId = 0;
       this.setSongLyric({ lrcData: [], yrcData: [] }, true);
       if (isElectron) {
-        window.electron.ipcRenderer.send("play-song-change", undefined);
+        window.electron.ipcRenderer.send("play-song-change", null);
       }
     },
     /**

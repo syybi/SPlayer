@@ -2,6 +2,7 @@ import { SongType, CoverType, ArtistType, CommentType, MetaData, CatType } from 
 import { msToTime } from "./time";
 import { flatMap, isArray, uniqBy } from "lodash-es";
 import { handleSongQuality } from "./helper";
+import { useDataStore, useMusicStore, useStatusStore } from "@/stores";
 
 type CoverDataType = {
   cover: string;
@@ -21,7 +22,7 @@ type CoverDataType = {
 export const formatSongsList = (data: any[]): SongType[] => {
   if (!data) return [];
   data = isArray(data) ? data : [data];
-  return data.map((item) => {
+  return data.filter(Boolean).map((item) => {
     // 特殊处理
     item = item?.simpleSong ? { ...item.simpleSong, pc: true } : item?.songInfo || item;
     // 歌手数据
@@ -87,7 +88,7 @@ export const formatSongsList = (data: any[]): SongType[] => {
 export const formatCoverList = (data: any[]): CoverType[] => {
   if (!data) return [];
   data = isArray(data) ? data : [data];
-  return data.map((item) => {
+  return data.filter(Boolean).map((item) => {
     // 处理数据
     const creator = isArray(item.creator) ? item.creator[0] : item.creator;
     // 获取歌手信息
@@ -132,7 +133,7 @@ export const formatCoverList = (data: any[]): CoverType[] => {
       likedCount: item.likedCount,
       duration: msToTime(item.duration || item.dt || item.playTime),
       createTime: item.createTime || item.publishTime,
-      updateTime: item.updateTime || item.trackNumberUpdateTime,
+      updateTime: item.updateTime || item.trackNumberUpdateTime || item.trackUpdateTime,
       // 热榜特殊数据
       tracks: item.tracks,
     };
@@ -147,7 +148,7 @@ export const formatCoverList = (data: any[]): CoverType[] => {
 export const formatArtistsList = (data: any[]): ArtistType[] => {
   if (!data) return [];
   data = isArray(data) ? data : [data];
-  return data.map((item) => ({
+  return data.filter(Boolean).map((item) => ({
     id: item.id,
     name: item.name,
     ...getCoverUrl(item),
@@ -167,8 +168,9 @@ export const formatArtistsList = (data: any[]): ArtistType[] => {
  * @returns 格式化后的评论列表
  */
 export const formatCommentList = (data: any[]): CommentType[] => {
+  if (!data) return [];
   data = isArray(data) ? data : [data];
-  return data.map((item) => ({
+  return data.filter(Boolean).map((item) => ({
     id: item.commentId,
     content: item.content,
     beReplied:
@@ -209,8 +211,9 @@ export const formatCommentList = (data: any[]): CommentType[] => {
  * @returns 格式化后的分类列表
  */
 export const formatCategoryList = (data: any[]): CatType[] => {
+  if (!data) return [];
   data = isArray(data) ? data : [data];
-  return data.map((item) => ({
+  return data.filter(Boolean).map((item) => ({
     name: item.name,
     category: item.category,
     hot: item.hot,
@@ -250,7 +253,7 @@ const getCoverUrl = (item: any): CoverDataType => {
  */
 const getCoverSizeUrl = (url: string, size: number | null = null) => {
   try {
-    if (!url) return "/images/song.jpg?assest";
+    if (!url) return "/images/song.jpg?asset";
     const sizeUrl = size
       ? typeof size === "number"
         ? `?param=${size}y${size}`
@@ -267,7 +270,7 @@ const getCoverSizeUrl = (url: string, size: number | null = null) => {
     return imageUrl;
   } catch (error) {
     console.error("图片链接处理出错：", error);
-    return "/images/song.jpg?assest";
+    return "/images/song.jpg?asset";
   }
 };
 
@@ -276,11 +279,79 @@ const getCoverSizeUrl = (url: string, size: number | null = null) => {
  * @param lyric 歌词内容
  * @returns 语言代码（"ja" | "zh-CN" | "en"）
  */
-export const getLyricLanguage = (lyric: string): string => {
+export const getLyricLanguage = (lyric: string): "ja" | "ko" | "zh-CN" | "en" => {
+  if (!lyric || typeof lyric !== "string") return "en";
   // 判断日语 根据平假名和片假名
-  if (/[\u3040-\u309f\u30a0-\u30ff]/.test(lyric)) return "ja";
+  if (/[\u3040-\u309F\u30A0-\u30FF]/.test(lyric)) return "ja";
+  // 判断韩语 根据韩文音节
+  if (/[\uAC00-\uD7AF]/.test(lyric)) return "ko";
   // 判断简体中文 根据中日韩统一表意文字基本区
-  if (/[\u4e00-\u9fa5]/.test(lyric)) return "zh-CN";
+  if (/[\u4E00-\u9FFF]/.test(lyric)) return "zh-CN";
   // 默认英语
   return "en";
+};
+
+/**
+ * 获取当前播放歌曲
+ * @returns 当前播放歌曲
+ */
+export const getPlaySongData = (): SongType | null => {
+  const dataStore = useDataStore();
+  const musicStore = useMusicStore();
+  const statusStore = useStatusStore();
+  // 若为私人FM
+  if (statusStore.personalFmMode) {
+    return musicStore.personalFMSong;
+  }
+  // 播放列表
+  const playlist = dataStore.playList;
+  if (!playlist.length) return null;
+  return playlist[statusStore.playIndex];
+};
+
+/**
+ * 获取播放信息对象
+ * @param song 歌曲
+ * @param sep 分隔符
+ * @returns 播放信息对象
+ */
+export const getPlayerInfoObj = (
+  song?: SongType,
+  sep: string = "/",
+): { name: string; artist: string; album: string } | null => {
+  const playSongData = song || getPlaySongData();
+  if (!playSongData) return null;
+
+  // 标题
+  const name = `${playSongData.name || "未知歌曲"}`;
+
+  // 歌手
+  const artist =
+    playSongData.type === "radio"
+      ? "播客电台"
+      : Array.isArray(playSongData.artists)
+        ? playSongData.artists.map((artists: { name: string }) => artists.name).join(sep)
+        : String(playSongData?.artists || "未知歌手");
+
+  // 专辑
+  const album =
+    playSongData.type === "radio"
+      ? "播客电台"
+      : typeof playSongData.album === "object"
+        ? playSongData.album.name
+        : String(playSongData.album || "未知专辑");
+
+  return { name, artist, album };
+};
+
+/**
+ * 获取播放信息
+ * @param song 歌曲
+ * @param sep 分隔符
+ * @returns 播放信息
+ */
+export const getPlayerInfo = (song?: SongType, sep: string = "/"): string | null => {
+  const info = getPlayerInfoObj(song, sep);
+  if (!info) return null;
+  return `${info.name} - ${info.artist}`;
 };

@@ -131,7 +131,7 @@ import { textRule } from "@/utils/rules";
 import { copyData } from "@/utils/helper";
 import { matchSong, songLyric } from "@/api/song";
 import { debounce, isArray, isEmpty, isObject } from "lodash-es";
-import blob from "@/utils/blob";
+import { useBlobURLManager } from "@/core/resource/BlobURLManager";
 import { formatSongsList } from "@/utils/format";
 
 const props = defineProps<{
@@ -169,6 +169,8 @@ interface InfoFormType {
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
 
+const blobURLManager = useBlobURLManager();
+
 // 本地歌曲总线
 const localEventBus = useEventBus("local");
 
@@ -178,7 +180,7 @@ const infoFormData = ref<InfoFormType>({ name: "", fileName: "", artist: "", alb
 const infoFormRules: FormRules = { name: textRule, artist: textRule, album: textRule };
 
 // 封面数据
-const coverData = ref<string>("/images/song.jpg?assest");
+const coverData = ref<string>("/images/song.jpg?asset");
 
 // 获取音乐元信息
 const getSongInfo = async () => {
@@ -212,7 +214,7 @@ const getSongInfo = async () => {
   // 获取封面
   const coverBuff = common.picture?.[0]?.data || "";
   const coverType = common.picture?.[0]?.format || "";
-  if (coverBuff) coverData.value = blob.createBlobURL(coverBuff as Buffer, coverType, path);
+  if (coverBuff) coverData.value = blobURLManager.createBlobURL(coverBuff as Buffer, coverType, path);
 };
 
 // 在线匹配
@@ -298,7 +300,7 @@ const saveSongInfo = debounce(async (song: SongType) => {
     const metadata = {
       ...infoFormData.value,
       cover:
-        coverData.value.startsWith("blob:") || coverData.value === "/images/song.jpg?assest"
+        coverData.value.startsWith("blob:") || coverData.value === "/images/song.jpg?asset"
           ? null
           : coverData.value.startsWith("file://")
             ? coverData.value.replace(/^file:\/\//, "")

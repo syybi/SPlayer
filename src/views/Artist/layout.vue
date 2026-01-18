@@ -14,7 +14,7 @@
           >
             <template #placeholder>
               <div class="cover-loading">
-                <img src="/images/artist.jpg?assest" class="loading-img" alt="loading-img" />
+                <img src="/images/artist.jpg?asset" class="loading-img" alt="loading-img" />
               </div>
             </template>
           </n-image>
@@ -62,17 +62,13 @@
               </div>
             </n-flex>
             <!-- 简介 -->
-            <n-ellipsis
+            <n-text
               v-if="artistDetailData.description"
-              :line-clamp="1"
-              :tooltip="{
-                trigger: 'click',
-                placement: 'bottom',
-                width: 'trigger',
-              }"
+              class="description text-hidden"
+              @click="openDescModal(artistDetailData.description, '歌手简介')"
             >
               {{ artistDetailData.description }}
-            </n-ellipsis>
+            </n-text>
           </n-collapse-transition>
           <n-flex class="menu" justify="space-between">
             <n-flex class="left" align="flex-end">
@@ -156,12 +152,14 @@ import type { DropdownOption } from "naive-ui";
 import type { ArtistType } from "@/types/main";
 import { coverLoaded, renderIcon, copyData } from "@/utils/helper";
 import { renderToolbar } from "@/utils/meta";
+import { openDescModal, openBatchList } from "@/utils/modal";
 import { artistDetail } from "@/api/artist";
 import { formatArtistsList } from "@/utils/format";
 import { useDataStore, useSettingStore } from "@/stores";
 import { toLikeArtist } from "@/utils/auth";
 import ArtistSongs from "./songs.vue";
 
+const route = useRoute();
 const router = useRouter();
 const dataStore = useDataStore();
 const settingStore = useSettingStore();
@@ -170,10 +168,10 @@ const settingStore = useSettingStore();
 const componentRef = ref<InstanceType<typeof ArtistSongs> | null>(null);
 
 // 歌手 ID
-const artistId = computed<number>(() => Number(router.currentRoute.value.query.id as string));
+const artistId = computed<number>(() => Number(route.query.id));
 
 // 歌手分类
-const artistType = ref<string>((router.currentRoute.value?.name as string) || "artist-songs");
+const artistType = ref<string>((route.name as string) || "artist-songs");
 
 // 歌手数据
 const artistDetailData = ref<ArtistType | null>(null);
@@ -184,14 +182,30 @@ const listScrolling = ref<boolean>(false);
 // 更多操作
 const moreOptions = computed<DropdownOption[]>(() => [
   {
+    label: "批量操作",
+    key: "batch",
+    show: artistType.value === "artist-songs",
+    props: {
+      onClick: () => {
+        if (componentRef.value?.songData) {
+          openBatchList(
+            componentRef.value.songData,
+            false,
+            isLikeArtist.value ? artistId.value : undefined,
+          );
+        } else {
+          window.$message.warning("暂无歌曲可操作");
+        }
+      },
+    },
+    icon: renderIcon("Batch"),
+  },
+  {
     label: "复制分享链接",
     key: "copy",
     props: {
       onClick: () =>
-        copyData(
-          `https://music.163.com/#/artist?id=${artistId.value}`,
-          "已复制分享链接到剪贴板",
-        ),
+        copyData(`https://music.163.com/#/artist?id=${artistId.value}`, "已复制分享链接到剪贴板"),
     },
     icon: renderIcon("Share"),
   },
@@ -249,15 +263,23 @@ const listScroll = (e: Event) => {
   listScrolling.value = scrollTop > 10;
 };
 
+// 监听路由更新
 onBeforeRouteUpdate((to) => {
   listScrolling.value = false;
-  if (to.matched[0].name !== "artist") return;
+  // 检查是否仍在 artist 路由下
+  const isArtistRoute = to.matched.some((m) => m.name === "artist");
+  if (!isArtistRoute) return;
   artistType.value = to.name as string;
-  const id = Number(to.query.id as string);
-  if (id && id !== artistId.value) getArtistDetail(id);
 });
 
-onMounted(() => getArtistDetail(artistId.value));
+// 监听 ID 变化
+watch(
+  () => artistId.value,
+  (val) => {
+    if (val) getArtistDetail(val);
+  },
+  { immediate: true },
+);
 </script>
 
 <style lang="scss" scoped>
@@ -337,7 +359,7 @@ onMounted(() => getArtistDetail(artistId.value));
           height: 40px;
         }
       }
-      :deep(.n-ellipsis) {
+      .description {
         margin-bottom: 8px;
         padding-left: 4px;
         cursor: pointer;

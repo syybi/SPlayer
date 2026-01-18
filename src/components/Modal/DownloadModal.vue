@@ -78,9 +78,9 @@ import { openSetting } from "@/utils/modal";
 import { isElectron } from "@/utils/env";
 import { songDetail } from "@/api/song";
 import { formatSongsList } from "@/utils/format";
-import SongDataCard from "@/components/Card/SongDataCard.vue";
 import { pick } from "lodash-es";
-import DownloadManager from "@/utils/downloadManager";
+import { useDownloadManager } from "@/core/resource/DownloadManager";
+import SongDataCard from "@/components/Card/SongDataCard.vue";
 
 const props = defineProps<{
   songs?: SongType[];
@@ -93,7 +93,7 @@ const emit = defineEmits<{
 }>();
 
 const settingStore = useSettingStore();
-
+const downloadManager = useDownloadManager();
 const loading = ref<boolean>(false);
 const songs = ref<SongType[]>(props.songs || []);
 
@@ -148,7 +148,7 @@ const handleConfirm = () => {
 
   // 添加到下载队列
   songs.value.forEach((song) => {
-    DownloadManager.addDownload(song, selectedQuality.value);
+    downloadManager.addDownload(song, selectedQuality.value);
   });
 
   emit("close");

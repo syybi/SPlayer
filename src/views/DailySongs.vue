@@ -54,9 +54,9 @@ import { updateDailySongsData } from "@/utils/auth";
 import { formatTimestamp } from "@/utils/time";
 import { renderIcon } from "@/utils/helper";
 import { openBatchList } from "@/utils/modal";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
-const player = usePlayer();
+const player = usePlayerController();
 const musicStore = useMusicStore();
 
 // 更新日期

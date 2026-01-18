@@ -4,8 +4,11 @@
     <div v-if="!isEmpty(listData)" ref="songListRef" class="song-list">
       <Transition name="fade" mode="out-in">
         <div
-          :key="listKey"
-          :style="{ height: height === 'auto' ? 'auto' : `${height || songListHeight}px` }"
+          :key="listKey + '_' + statusStore.listSort"
+          :style="{
+            height: height === 'auto' ? 'auto' : `${height || songListHeight}px`,
+            transition: disableHeightTransition ? 'transform 0.3s, opacity 0.3s' : undefined,
+          }"
           class="virtual-list-wrapper"
         >
           <!-- 悬浮顶栏 -->
@@ -34,13 +37,13 @@
             <n-text v-if="data?.[0].size && !hiddenSize" class="meta size">大小</n-text>
           </div>
           <!-- 虚拟列表 -->
-          <n-virtual-list
+          <VirtualScroll
             ref="listRef"
-            :item-size="94"
+            :item-height="90"
+            :item-fixed="true"
             :items="virtualListItems"
-            :style="{ height: `calc(100% - 40px)` }"
+            :height="`calc(100% - 40px)`"
             :padding-bottom="80"
-            item-resizable
             @scroll="onScroll"
           >
             <template #default="{ item, index }">
@@ -77,7 +80,7 @@
                 <n-divider v-else dashed> 没有更多啦 ~ </n-divider>
               </div>
             </template>
-          </n-virtual-list>
+          </VirtualScroll>
         </div>
       </Transition>
       <!-- 右键菜单 -->
@@ -108,14 +111,15 @@
 </template>
 
 <script setup lang="ts">
-import type { DropdownOption, VirtualListInst } from "naive-ui";
+import type { DropdownOption } from "naive-ui";
 import { SongType, SortType } from "@/types/main";
 import { useMusicStore, useStatusStore } from "@/stores";
 import { entries, isEmpty } from "lodash-es";
 import { sortOptions } from "@/utils/meta";
 import { renderIcon } from "@/utils/helper";
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 import SongListMenu from "@/components/Menu/SongListMenu.vue";
+import VirtualScroll from "@/components/UI/VirtualScroll.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -149,6 +153,8 @@ const props = withDefaults(
     doubleClickAction?: "all" | "add";
     /** 列表版本 */
     listVersion?: string | number;
+    /** 禁用高度过渡动画 */
+    disableHeightTransition?: boolean;
   }>(),
   {
     type: "song",
@@ -168,16 +174,16 @@ const emit = defineEmits<{
   removeSong: [id: number[]];
 }>();
 
-const player = usePlayer();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
+const player = usePlayerController();
 
 // 列表状态
 const scrollTop = ref<number>(0);
 const scrollIndex = ref<number>(0);
 
 // 列表元素
-const listRef = ref<VirtualListInst | null>(null);
+const listRef = ref<InstanceType<typeof VirtualScroll> | null>(null);
 const songListRef = ref<HTMLElement | null>(null);
 
 // 悬浮工具
@@ -286,7 +292,7 @@ const onScroll = (e: Event) => {
   const target = e.target as HTMLElement;
   const top = target.scrollTop;
   scrollTop.value = top;
-  scrollIndex.value = Math.floor(top / 94);
+  scrollIndex.value = Math.floor(top / 90);
 
   // 触底检测
   const scrollHeight = target.scrollHeight;
@@ -298,13 +304,13 @@ const onScroll = (e: Event) => {
 
 // 滚动到顶部
 const scrollToTop = () => {
-  listRef.value?.scrollTo({ index: 0 });
+  listRef.value?.scrollToIndex(0);
 };
 
 // 滚动到当前播放歌曲
 const scrollToCurrentSong = () => {
   if (hasPlaySong.value >= 0) {
-    listRef.value?.scrollTo({ index: hasPlaySong.value });
+    listRef.value?.scrollToIndex(hasPlaySong.value);
   }
 };
 
@@ -316,15 +322,14 @@ const sortSelect = (key: SortType) => {
     player.updatePlayList(listData.value, musicStore.playSong, props.playListId, {
       showTip: false,
       play: false,
-      scrobble: false,
     });
   }
   // 滚动到当前播放歌曲或顶部
   nextTick(() => {
     if (hasPlaySong.value >= 0) {
-      listRef.value?.scrollTo({ index: hasPlaySong.value });
+      listRef.value?.scrollToIndex(hasPlaySong.value);
     } else {
-      listRef.value?.scrollTo({ index: 0 });
+      listRef.value?.scrollToIndex(0);
     }
   });
 };
@@ -342,7 +347,7 @@ onActivated(() => {
   if (props.height === "auto") stopCalcHeight();
   if (scrollIndex.value > 0) {
     nextTick(() => {
-      listRef.value?.scrollTo({ index: scrollIndex.value, behavior: "auto" });
+      listRef.value?.scrollToIndex(scrollIndex.value);
     });
   }
 });
@@ -447,6 +452,10 @@ onBeforeUnmount(() => {
   .virtual-list-wrapper {
     height: 100%;
     position: relative;
+    transition:
+      height 0.3s,
+      transform 0.3s,
+      opacity 0.3s;
     .sticky-header {
       position: sticky;
       top: 0;

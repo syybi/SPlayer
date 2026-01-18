@@ -40,9 +40,33 @@
         align="center"
       >
         <!-- 音质 -->
-        <span class="meta-item">{{
-          statusStore.playUblock || !statusStore.songQuality ? "未知音质" : statusStore.songQuality
-        }}</span>
+        <n-popselect
+          :value="currentPlayingLevel"
+          :options="qualityOptions"
+          :disabled="!!musicStore.playSong.path || statusStore.playUblock || !!musicStore.playSong.pc"
+          class="player"
+          trigger="click"
+          placement="top"
+          @update:value="handleQualitySelect"
+        >
+          <template #header>
+            <n-flex class="quality-title" size="small" vertical>
+              <span class="title">音质切换</span>
+              <span class="tip">以账号具体权限为准</span>
+            </n-flex>
+          </template>
+          <span
+            class="meta-item clickable"
+            :class="{ loading: qualityLoading }"
+            @click="handlePopselectClick"
+          >
+            {{
+              statusStore.playUblock || !statusStore.songQuality
+                ? "未知音质"
+                : statusStore.songQuality
+            }}
+          </span>
+        </n-popselect>
         <!-- 歌词模式 -->
         <span class="meta-item">{{ lyricMode }}</span>
         <!-- 是否在线 -->
@@ -102,8 +126,14 @@
 
 <script setup lang="ts">
 import type { RouteLocationRaw } from "vue-router";
+import type { DropdownOption } from "naive-ui";
+import type { SongLevelDataType } from "@/types/main";
 import { useMusicStore, useStatusStore, useSettingStore } from "@/stores";
 import { debounce, isObject } from "lodash-es";
+import { songQuality } from "@/api/song";
+import { songLevelData, getSongLevelsData } from "@/utils/meta";
+import { formatFileSize, handleSongQuality } from "@/utils/helper";
+import { usePlayerController } from "@/core/player/PlayerController";
 
 defineProps<{
   center?: boolean;
@@ -116,6 +146,59 @@ const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
 
+// 音质选择菜单状态
+const qualityLoading = ref(false);
+const availableQualities = ref<SongLevelDataType[]>([]);
+
+// 当前实际播放的音质级别
+const currentPlayingLevel = computed(() => {
+  const current = statusStore.songQuality;
+  if (!current || !availableQualities.value.length) return settingStore.songLevel;
+  // 在可用列表中找到与当前播放音质名称匹配的级别
+  const found = availableQualities.value.find((q) => handleSongQuality(q) === current);
+  return found ? found.level : settingStore.songLevel;
+});
+
+// 音质选项
+const qualityOptions = computed<DropdownOption[]>(() => {
+  return availableQualities.value.map((item) => {
+    // 是否为当前设置的音质
+    const isDefaultQuality = settingStore.songLevel === item.level;
+    // 是否为当前实际播放的音质
+    const isPlayingQuality = currentPlayingLevel.value === item.level;
+    return {
+      label: () =>
+        h(
+          "div",
+          {
+            style: {
+              display: "flex",
+              alignItems: "center",
+              width: "100%",
+              minWidth: "150px",
+              fontWeight: isDefaultQuality ? "bold" : "normal",
+              color: isPlayingQuality ? "rgb(var(--main-cover-color))" : undefined,
+            },
+          },
+          [
+            h("span", item.name),
+
+            h(
+              "span",
+              { style: { opacity: 0.6, fontSize: "12px", marginLeft: "6px" } },
+              isDefaultQuality && !isPlayingQuality
+                ? "当前配置"
+                : item.size
+                  ? formatFileSize(item.size)
+                  : "",
+            ),
+          ],
+        ),
+      value: item.level,
+    };
+  });
+});
+
 // 当前歌词模式
 const lyricMode = computed(() => {
   if (settingStore.showYrc) {
@@ -124,6 +207,103 @@ const lyricMode = computed(() => {
   }
   return musicStore.isHasLrc ? "LRC" : "NO-LRC";
 });
+
+/**
+ * 加载可用音质列表
+ * @param isPreload 是否为预加载模式（静默加载，无错误提示）
+ */
+const loadQualities = async (isPreload = false) => {
+  // 本地歌曲或解锁歌曲不支持切换
+  if (musicStore.playSong.path || statusStore.playUblock) return;
+  // 如果已经加载过，不重复加载
+  if (availableQualities.value.length > 0) return;
+
+  const songId = musicStore.playSong.id;
+  if (!songId) return;
+
+  if (!isPreload) {
+    qualityLoading.value = true;
+  }
+
+  try {
+    const res = await songQuality(songId);
+    if (res.data) {
+      const levels = getSongLevelsData(songLevelData, res.data);
+      availableQualities.value = levels;
+    } else if (!isPreload) {
+      window.$message.warning("获取音质信息失败");
+    }
+  } catch (error) {
+    console.error(`获取音质详情失败${isPreload ? " (预加载)" : ""}:`, error);
+    if (!isPreload) {
+      window.$message.error("获取音质信息失败");
+    }
+  } finally {
+    if (!isPreload) {
+      qualityLoading.value = false;
+    }
+  }
+};
+
+// 点击音质标签 - 如果没有音质列表则加载
+const handlePopselectClick = () => {
+  if (availableQualities.value.length === 0) {
+    loadQualities(false);
+  }
+};
+
+// 预加载音质列表
+const preloadQualities = () => loadQualities(true);
+
+// 选择音质
+const handleQualitySelect = async (key: string) => {
+  // 如果选择的和当前一样，不处理
+  if (settingStore.songLevel === key) {
+    return;
+  }
+
+  const item = availableQualities.value.find((q) => q.level === key);
+  if (!item) return;
+
+  // 更新设置中的音质
+  settingStore.songLevel = key as typeof settingStore.songLevel;
+
+  // 切换音质，保持当前进度，不重新加载歌词
+  const playerController = usePlayerController();
+  await playerController.switchQuality(statusStore.currentTime);
+
+  // 获取实际切换后的音质项
+  const actualItem = availableQualities.value.find(
+    (q) => handleSongQuality(q) === statusStore.songQuality,
+  );
+
+  // 切换成功提示
+  window.$message.success(`已切换至${actualItem?.name || statusStore.songQuality}`);
+};
+
+// 当切换歌曲时清空已加载的音质列表并预加载
+watch(
+  () => musicStore.playSong.id,
+  () => {
+    availableQualities.value = [];
+    preloadQualities();
+  },
+);
+
+// 挂载时预加载
+onMounted(() => {
+  preloadQualities();
+});
+
+// 打开全屏播放器时预加载音质列表
+watch(
+  () => statusStore.showFullPlayer,
+  (show) => {
+    if (show) {
+      preloadQualities();
+    }
+  },
+);
 
 const jumpPage = debounce(
   (go: RouteLocationRaw) => {
@@ -236,6 +416,18 @@ const jumpPage = debounce(
       border-radius: 8px;
       padding: 2px 6px;
       border: 1px solid rgba(var(--main-cover-color), 0.6);
+      &.clickable {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        &:hover {
+          background-color: rgba(var(--main-cover-color), 0.08);
+          border-color: rgb(var(--main-cover-color));
+        }
+        &.loading {
+          opacity: 0.6;
+          cursor: wait;
+        }
+      }
     }
   }
   &.record {
@@ -283,5 +475,15 @@ const jumpPage = debounce(
   color: rgb(var(--main-cover-color));
   background-color: rgba(var(--main-cover-color), 0.18);
   backdrop-filter: blur(10px);
+}
+.quality-title {
+  .title {
+    font-size: 14px;
+    line-height: normal;
+  }
+  .tip {
+    font-size: 12px;
+    opacity: 0.6;
+  }
 }
 </style>

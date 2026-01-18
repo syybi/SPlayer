@@ -1,24 +1,26 @@
+import { RepeatModeType, ShuffleModeType } from "@shared";
 import {
   app,
-  Tray,
+  BrowserWindow,
   Menu,
   MenuItemConstructorOptions,
-  BrowserWindow,
   nativeImage,
   nativeTheme,
+  Tray,
 } from "electron";
-import { isWin, appName } from "../utils/config";
 import { join } from "path";
 import { trayLog } from "../logger";
 import { useStore } from "../store";
+import { appName, isWin } from "../utils/config";
 import lyricWindow from "../windows/lyric-window";
 
 // 播放模式
-type PlayMode = "repeat" | "repeat-once" | "shuffle";
 type PlayState = "play" | "pause" | "loading";
 
+let repeatMode: RepeatModeType = "list";
+let shuffleMode: ShuffleModeType = "off";
+
 // 全局数据
-let playMode: PlayMode = "repeat";
 let playState: PlayState = "pause";
 let playName: string = "未播放歌曲";
 let likeSong: boolean = false;
@@ -27,7 +29,7 @@ let desktopLyricLock: boolean = false;
 
 export interface MainTray {
   setTitle(title: string): void;
-  setPlayMode(mode: PlayMode): void;
+  setPlayMode(repeat: RepeatModeType, shuffle: ShuffleModeType): void;
   setLikeState(like: boolean): void;
   setPlayState(state: PlayState): void;
   setPlayName(name: string): void;
@@ -58,6 +60,22 @@ const createTrayMenu = (win: BrowserWindow): MenuItemConstructorOptions[] => {
       height: 16,
     });
   };
+  /**
+   * 获取 {@linkcode RepeatModeType} 对应的显示字符串
+   * @param mode 重复模式
+   * @returns 对应的显示字符串
+   */
+  const getRepeatLabel = (mode: RepeatModeType): string => {
+    switch (mode) {
+      case "one":
+        return "单曲循环";
+      case "off":
+        return "不循环";
+      case "list":
+      default:
+        return "列表循环";
+    }
+  };
   // 菜单
   const menu: MenuItemConstructorOptions[] = [
     {
@@ -73,40 +91,44 @@ const createTrayMenu = (win: BrowserWindow): MenuItemConstructorOptions[] => {
       type: "separator",
     },
     {
-      id: "toogleLikeSong",
+      id: "toggle-like-song",
       label: likeSong ? "从我喜欢中移除" : "添加到我喜欢",
       icon: showIcon(likeSong ? "like" : "unlike"),
-      click: () => win.webContents.send("toogleLikeSong"),
+      click: () => win.webContents.send("toggle-like-song"),
     },
     {
-      id: "changeMode",
-      label:
-        playMode === "repeat" ? "列表循环" : playMode === "repeat-once" ? "单曲循环" : "随机播放",
-      icon: showIcon(playMode),
+      id: "shuffle",
+      label: shuffleMode === "heartbeat" ? "心动模式" : "随机播放",
+      icon: showIcon("shuffle"),
+      type: "checkbox",
+      checked: shuffleMode !== "off",
+      click: () => win.webContents.send("toggleShuffle"),
+    },
+    {
+      id: "repeatMode",
+      label: getRepeatLabel(repeatMode),
+      icon: showIcon(repeatMode === "one" ? "repeat-once" : "repeat"),
       submenu: [
         {
-          id: "repeat",
           label: "列表循环",
           icon: showIcon("repeat"),
-          checked: playMode === "repeat",
           type: "radio",
-          click: () => win.webContents.send("changeMode", "repeat"),
+          checked: repeatMode === "list",
+          click: () => win.webContents.send("changeRepeat", "list"),
         },
         {
-          id: "repeat-once",
           label: "单曲循环",
           icon: showIcon("repeat-once"),
-          checked: playMode === "repeat-once",
           type: "radio",
-          click: () => win.webContents.send("changeMode", "repeat-once"),
+          checked: repeatMode === "one",
+          click: () => win.webContents.send("changeRepeat", "one"),
         },
         {
-          id: "shuffle",
-          label: "随机播放",
-          icon: showIcon("shuffle"),
-          checked: playMode === "shuffle",
+          label: "关闭循环",
+          icon: showIcon("repeat"),
           type: "radio",
-          click: () => win.webContents.send("changeMode", "shuffle"),
+          checked: repeatMode === "off",
+          click: () => win.webContents.send("changeRepeat", "off"),
         },
       ],
     },
@@ -135,13 +157,13 @@ const createTrayMenu = (win: BrowserWindow): MenuItemConstructorOptions[] => {
       type: "separator",
     },
     {
-      id: "toogleDesktopLyric",
+      id: "toggle-desktop-lyric",
       label: `${desktopLyricShow ? "关闭" : "开启"}桌面歌词`,
       icon: showIcon("lyric"),
-      click: () => win.webContents.send("toogleDesktopLyric"),
+      click: () => win.webContents.send("toggle-desktop-lyric"),
     },
     {
-      id: "toogleDesktopLyricLock",
+      id: "toggle-desktop-lyric-lock",
       label: `${desktopLyricLock ? "解锁" : "锁定"}桌面歌词`,
       icon: showIcon(desktopLyricLock ? "lock" : "unlock"),
       visible: desktopLyricShow,
@@ -177,8 +199,6 @@ const createTrayMenu = (win: BrowserWindow): MenuItemConstructorOptions[] => {
       label: "退出",
       icon: showIcon("power"),
       click: () => {
-        // win.close();
-        app.exit(0);
         app.quit();
       },
     },
@@ -259,10 +279,12 @@ class CreateTray implements MainTray {
   }
   /**
    * 设置播放模式
-   * @param mode 播放模式
+   * @param repeat 当前的重复播放模式
+   * @param shuffle 当前的随机播放模式
    */
-  setPlayMode(mode: PlayMode) {
-    playMode = mode;
+  setPlayMode(repeat: RepeatModeType, shuffle: ShuffleModeType) {
+    repeatMode = repeat;
+    shuffleMode = shuffle;
     // 更新菜单
     this.initTrayMenu();
   }

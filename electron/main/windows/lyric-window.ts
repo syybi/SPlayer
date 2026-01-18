@@ -36,7 +36,7 @@ class LyricWindow {
       this.win = null;
       const mainWin = mainWindow?.getWin();
       if (mainWin) {
-        mainWin?.webContents.send("closeDesktopLyric");
+        mainWin?.webContents.send("close-desktop-lyric");
       }
     });
   }
@@ -60,6 +60,7 @@ class LyricWindow {
       x,
       y,
       transparent: true,
+      hasShadow: false,
       backgroundColor: "rgba(0, 0, 0, 0)",
       alwaysOnTop: true,
       resizable: true,

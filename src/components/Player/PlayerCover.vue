@@ -4,7 +4,7 @@
     <img
       v-if="settingStore.playerType === 'record'"
       class="pointer"
-      src="/images/pointer.png?assest"
+      src="/images/pointer.png?asset"
       alt="pointer"
     />
     <!-- 专辑图片 -->
@@ -12,6 +12,7 @@
       :key="musicStore.getSongCover()"
       :src="musicStore.getSongCover('l')"
       :observe-visibility="false"
+      object-fit="cover"
       class="cover-img"
     />
     <!-- 动态封面 -->
@@ -125,7 +126,6 @@ onBeforeUnmount(() => {
   .cover-img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
     z-index: 1;
     box-shadow: 0 0 20px 10px rgba(0, 0, 0, 0.1);
     transition: opacity 0.1s ease-in-out;

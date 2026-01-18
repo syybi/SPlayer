@@ -13,7 +13,7 @@
           hoverable
           @click="jumpArtist(item.id)"
         >
-          <n-avatar :src="item.cover || '/images/artist.jpg?assest'" class="cover" round />
+          <n-avatar :src="item.cover || '/images/artist.jpg?asset'" class="cover" round />
           <n-text class="name">{{ item.name }}</n-text>
         </n-card>
       </div>
@@ -27,7 +27,7 @@
 <script setup lang="ts">
 import type { SongType, MetaData } from "@/types/main";
 import { useSettingStore } from "@/stores";
-import { searchArtist } from "@/api/artist";
+import { searchArtist, artistDetail } from "@/api/artist";
 import { uniq } from "lodash-es";
 
 const props = defineProps<{
@@ -86,7 +86,27 @@ const getArtistData = async () => {
       });
     }
   } else if (Array.isArray(props.artist)) {
-    artistData.value = props.artist;
+    // 检查是否有 cover 字段，如果没有则获取歌手详情
+    const artistPromises = props.artist.map(async (ar) => {
+      // 如果已有封面，则直接返回
+      if (ar.cover) {
+        return ar;
+      }
+      // 否则，获取歌手详情
+      try {
+        const result = await artistDetail(ar.id);
+        const artist = result.data?.artist;
+        return {
+          id: ar.id,
+          name: ar.name,
+          cover: artist?.avatar || artist?.img1v1Url || artist?.picUrl,
+        };
+      } catch (error) {
+        console.error(`获取歌手 ${ar.name} (${ar.id}) 的详情失败:`, error);
+        return { id: ar.id, name: ar.name, cover: undefined };
+      }
+    });
+    artistData.value = await Promise.all(artistPromises);
   }
 };
 

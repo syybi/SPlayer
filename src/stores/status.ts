@@ -1,6 +1,8 @@
-import { defineStore } from "pinia";
+import type { ColorScheme, RGB } from "@/types/main";
 import { QualityType, type SortType } from "@/types/main";
-import type { PlayModeType, RGB, ColorScheme } from "@/types/main";
+import { RepeatModeType, ShuffleModeType } from "@/types/shared";
+import { isDevBuild } from "@/utils/env";
+import { defineStore } from "pinia";
 
 interface StatusState {
   /** 菜单折叠状态 */
@@ -27,10 +29,18 @@ interface StatusState {
   playVolume: number;
   /** 静音前音量 */
   playVolumeMute: number;
-  /** 播放模式 */
-  playSongMode: PlayModeType;
-  /** 心动模式 */
-  playHeartbeatMode: boolean;
+  /**
+   * 循环模式
+   *
+   * off: 关闭 | list: 列表循环 | one: 单曲循环
+   */
+  repeatMode: RepeatModeType;
+  /**
+   * 随机模式
+   *
+   * off: 关闭 | on: 随机播放 | heartbeat: 心动模式
+   */
+  shuffleMode: ShuffleModeType;
   /** 封面主题 */
   songCoverTheme: {
     /** 封面主题颜色 */
@@ -42,7 +52,7 @@ interface StatusState {
   };
   /** 纯净歌词模式 */
   pureLyricMode: boolean;
-  /** 是否使用 TTML 歌词 */
+  /** 当前是否正使用 TTML 歌词 */
   usingTTMLLyric: boolean;
   /** 当前歌曲音质 */
   songQuality: QualityType | undefined;
@@ -88,9 +98,13 @@ interface StatusState {
     time: number;
     /** 剩余时长（秒） */
     remainTime: number;
+    /** 目标结束时间戳（毫秒） */
+    endTime: number;
     /** 等待歌曲结束 */
     waitSongEnd: boolean;
   };
+  /** 开发者模式（假） */
+  developerMode: boolean;
 }
 
 export const useStatusStore = defineStore("status", {
@@ -119,8 +133,8 @@ export const useStatusStore = defineStore("status", {
     playRate: 1,
     playVolume: 0.7,
     playVolumeMute: 0,
-    playSongMode: "repeat",
-    playHeartbeatMode: false,
+    repeatMode: "off",
+    shuffleMode: "off",
     personalFmMode: false,
     mainContentHeight: 0,
     listSort: "default",
@@ -134,8 +148,10 @@ export const useStatusStore = defineStore("status", {
       enable: false,
       time: 30,
       remainTime: 0,
+      endTime: 0,
       waitSongEnd: true,
     },
+    developerMode: false,
   }),
   getters: {
     // 播放音量图标
@@ -149,16 +165,17 @@ export const useStatusStore = defineStore("status", {
             ? "VolumeDown"
             : "VolumeUp";
     },
-    // 播放模式图标
-    playModeIcon(state) {
-      const mode = state.playSongMode;
-      return state.playHeartbeatMode
-        ? "HeartBit"
-        : mode === "repeat"
-          ? "Repeat"
-          : mode === "repeat-once"
-            ? "RepeatSong"
-            : "Shuffle";
+    shuffleIcon(state) {
+      if (state.shuffleMode === "heartbeat") {
+        return "HeartBit";
+      }
+      return "Shuffle";
+    },
+    repeatIcon(state) {
+      if (state.repeatMode === "one") {
+        return "RepeatSong";
+      }
+      return "Repeat";
     },
     // 音量百分比
     playVolumePercent(state) {
@@ -169,6 +186,10 @@ export const useStatusStore = defineStore("status", {
       const mainColor = state.songCoverTheme?.main;
       if (!mainColor) return "239, 239, 239";
       return `${mainColor.r}, ${mainColor.g}, ${mainColor.b}`;
+    },
+    /** 是否为开发者模式 */
+    isDeveloperMode(state) {
+      return state.developerMode || isDevBuild;
     },
   },
   actions: {
@@ -223,6 +244,31 @@ export const useStatusStore = defineStore("status", {
       }
     },
     /**
+     * 切换循环模式
+     * 顺序: List -> One -> Off -> List
+     */
+    toggleRepeat() {
+      if (this.repeatMode === "list") {
+        this.repeatMode = "one";
+      } else if (this.repeatMode === "one") {
+        this.repeatMode = "off";
+      } else {
+        this.repeatMode = "list";
+      }
+    },
+    /**
+     * 切换随机模式
+     * 顺序: Off -> On -> Off
+     * @deprecated 心跳模式只能通过菜单开启，不再通过此方法切换
+     */
+    toggleShuffle() {
+      if (this.shuffleMode === "off") {
+        this.shuffleMode = "on";
+      } else {
+        this.shuffleMode = "off";
+      }
+    },
+    /**
      * 设置 EQ 开关
      * @param enabled 是否开启
      */
@@ -244,6 +290,25 @@ export const useStatusStore = defineStore("status", {
     setEqPreset(preset: string) {
       this.eqPreset = preset;
     },
+    /**
+     * 重置播放状态
+     */
+    resetPlayStatus() {
+      this.$patch({
+        currentTime: 0,
+        duration: 0,
+        progress: 0,
+        lyricIndex: -1,
+        playStatus: false,
+        playLoading: false,
+        playListShow: false,
+        showFullPlayer: false,
+        personalFmMode: false,
+        playIndex: -1,
+        repeatMode: "off",
+        shuffleMode: "off",
+      });
+    },
   },
   // 持久化
   persist: {
@@ -261,16 +326,17 @@ export const useStatusStore = defineStore("status", {
       "playVolume",
       "playVolumeMute",
       "playSongType",
-      "playSongMode",
+      "repeatMode",
+      "shuffleMode",
       "songCoverTheme",
       "listSort",
       "showDesktopLyric",
-      "playHeartbeatMode",
       "personalFmMode",
       "autoClose",
       "eqEnabled",
       "eqBands",
       "eqPreset",
+      "developerMode",
     ],
   },
 });

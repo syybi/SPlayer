@@ -7,31 +7,32 @@ dayjs.extend(duration);
 dayjs.extend(relativeTime);
 dayjs.extend(localizedFormat);
 
-// 秒转为时间
-export const secondsToTime = (seconds: number) => {
-  if (seconds < 3600) {
-    return dayjs.duration(seconds, "seconds").format("m:ss");
-  } else {
-    return dayjs.duration(seconds, "seconds").format("H:mm:ss");
-  }
+/** 秒转为时间字符串 (m:ss 或 H:mm:ss) */
+export const secondsToTime = (seconds: number): string => {
+  const format = seconds < 3600 ? "m:ss" : "H:mm:ss";
+  return dayjs.duration(seconds, "seconds").format(format);
 };
 
-// 毫秒转为时间
-export const msToTime = (milliseconds: number) => {
-  const dur = dayjs.duration(milliseconds, "milliseconds");
-  return milliseconds < 3600000 ? dur.format("mm:ss") : dur.format("H:mm:ss");
+/** 毫秒转为时间字符串 (mm:ss 或 H:mm:ss) */
+export const msToTime = (milliseconds: number): string => {
+  const format = milliseconds < 3600000 ? "mm:ss" : "H:mm:ss";
+  return dayjs.duration(milliseconds, "milliseconds").format(format);
 };
 
-// 毫秒转为秒
+/**
+ * 将毫秒转换为秒
+ * @param milliseconds - 毫秒数
+ * @param decimalPlaces - 保留小数位数，默认为 2
+ * @returns 转换后的秒数
+ */
 export const msToS = (milliseconds: number, decimalPlaces: number = 2): number => {
   return Number((milliseconds / 1000).toFixed(decimalPlaces));
 };
 
 /**
- * 格式化时间戳
- * @param {number|undefined} timestamp - 要格式化的时间戳（以毫秒为单位）。如果为 `null` 或 `0`，则返回空字符串。
- * @param {string} [format="YYYY-MM-DD"] - 可选的时间格式，默认格式为 "YYYY-MM-DD"。可传入任意 dayjs 支持的格式。
- * @returns {string} - 根据指定格式返回的日期字符串
+ * 格式化时间戳，同年省略年份
+ * @param timestamp 时间戳（毫秒），为空或 0 时返回空字符串
+ * @param format 时间格式，默认 "YYYY-MM-DD"
  */
 export const formatTimestamp = (
   timestamp: number | undefined,
@@ -39,39 +40,34 @@ export const formatTimestamp = (
 ): string => {
   if (!timestamp) return "";
   const date = dayjs(timestamp);
-  const currentYear = dayjs().year();
-  const year = date.year();
-  // 如果年份相同
-  if (year === currentYear) {
-    return date.format(format.replace("YYYY-", ""));
-  }
-  return date.format(format);
-};
-
-// 格式化评论时间戳
-export const formatCommentTime = (timestamp: number): string => {
-  const now = dayjs();
-  const diff = now.diff(dayjs(timestamp), "minute");
-  if (diff < 1) {
-    return "刚刚发布";
-  } else if (diff < 60) {
-    return `${diff}分钟前`;
-  } else if (diff < 1440) {
-    // 1天 = 24小时 * 60分钟
-    return `${Math.floor(diff / 60)}小时前`;
-  } else if (diff < 525600) {
-    // 1年约等于 525600分钟
-    return dayjs(timestamp).format("MM-DD HH:mm");
-  } else {
-    return dayjs(timestamp).format("YYYY-MM-DD HH:mm");
-  }
+  const isSameYear = date.year() === dayjs().year();
+  return date.format(isSameYear ? format.replace("YYYY-", "") : format);
 };
 
 /**
- * 计算进度条移动的距离
- * @param {number} currentTime
- * @param {number} duration
- * @returns {number} 进度条移动的距离，精确到 0.01，最大为 100
+ * 格式化评论时间戳
+ * @param timestamp 评论时间戳（毫秒）
+ * @returns 格式化后的字符串
+ */
+export const formatCommentTime = (timestamp: number): string => {
+  const timeNow = dayjs();
+  const timeComment = dayjs(timestamp);
+  const diffMinute = timeNow.diff(timeComment, "minute");
+
+  if (diffMinute < 1) return "刚刚发布";
+  if (diffMinute < 60) return `${diffMinute} 分钟前`;
+  if (diffMinute < 1440) return `${Math.floor(diffMinute / 60)} 小时前`;
+
+  // 超过一天：同年只显示日期，跨年显示完整日期
+  const format = timeComment.year() === timeNow.year() ? "MM-DD HH:mm" : "YYYY-MM-DD HH:mm";
+  return timeComment.format(format);
+};
+
+/**
+ * 计算进度条百分比
+ * @param currentTime 当前时间
+ * @param duration 总时长
+ * @returns 进度百分比，精确到 0.01，范围 0-100
  */
 export const calculateProgress = (currentTime: number, duration: number): number => {
   if (duration === 0) return 0;
@@ -79,57 +75,34 @@ export const calculateProgress = (currentTime: number, duration: number): number
   return Math.min(Math.round(progress * 100) / 100, 100);
 };
 
-/**
- * 获取当前时间段的问候语
- */
-export const getGreeting = () => {
+/** 获取当前时间段的问候语 */
+export const getGreeting = (): string => {
   const hour = dayjs().hour();
-  if (hour < 6) {
-    return "凌晨好";
-  } else if (hour < 9) {
-    return "早上好";
-  } else if (hour < 12) {
-    return "上午好";
-  } else if (hour < 14) {
-    return "中午好";
-  } else if (hour < 17) {
-    return "下午好";
-  } else if (hour < 19) {
-    return "傍晚好";
-  } else if (hour < 22) {
-    return "晚上好";
-  } else {
-    return "夜深了";
-  }
+  const greetings: [number, string][] = [
+    [6, "凌晨好"],
+    [9, "早上好"],
+    [12, "上午好"],
+    [14, "中午好"],
+    [17, "下午好"],
+    [19, "傍晚好"],
+    [22, "晚上好"],
+    [24, "夜深了"],
+  ];
+  return greetings.find(([limit]) => hour < limit)?.[1] ?? "夜深了";
 };
 
-/**
- * 是否为当天的6点之前
- * @param timestamp 当前时间戳
- */
-export const isBeforeSixAM = (timestamp: number) => {
-  // 当天的早上 6 点
+/** 判断时间戳是否在当天6点之前 */
+export const isBeforeSixAM = (timestamp: number): boolean => {
   const sixAM = dayjs().startOf("day").add(6, "hour");
-  // 判断输入时间是否在六点之前
-  const inputTime = dayjs(timestamp);
-  return inputTime.isBefore(sixAM);
+  return dayjs(timestamp).isBefore(sixAM);
 };
 
-/**
- * 将 ISO 8601 格式的时间字符串转换为本地时间
- * @param isoString - ISO 8601 格式的时间字符串
- * @returns
- */
+/** ISO 8601 字符串转本地时间格式 */
 export const convertToLocalTime = (isoString: string): string => {
   return dayjs(isoString).format("YYYY-MM-DD HH:mm:ss");
 };
 
-/**
- * 将秒转为 分：秒
- * @param seconds 秒数
- * @returns 分：秒格式的字符串
- */
+/** 秒转为 mm:ss 格式（补零） */
 export const convertSecondsToTime = (seconds: number): string => {
-  // 需要补零
   return dayjs.duration(seconds, "seconds").format("mm:ss");
 };

@@ -1,6 +1,6 @@
 import { isElectron } from "@/utils/env";
 import { defaultAMLLDbServer, songLevelData } from "@/utils/meta";
-import { SongUnlockServer } from "@/utils/songManager";
+import { SongUnlockServer } from "@/core/player/SongManager";
 import { useSettingStore } from "@/stores";
 import request from "@/utils/request";
 

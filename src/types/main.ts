@@ -22,6 +22,14 @@ export type CoverSize = {
 
 /** 音质 */
 export enum QualityType {
+  /** 超清母带 */
+  Master = "Master", // jymaster
+  /** 杜比全景声 */
+  Dolby = "Dolby", // db
+  /** 沉浸环绕声 */
+  Spatial = "Spatial", // sky
+  /** 高清环绕声 */
+  Surround = "Surround", // jyeffect
   /** Hi-Res */
   HiRes = "Hi-Res", // hr
   /** 无损 */
@@ -44,30 +52,60 @@ export type UserType = {
   isAnnualCount?: boolean;
 };
 
+/** 歌曲信息 */
 export type SongType = {
+  /** 歌曲id */
   id: number;
+  /** 歌曲名称 */
   name: string;
+  /** 歌手 */
   artists: MetaData[] | string;
+  /** 专辑 */
   album: MetaData | string;
+  /** 电台 */
   dj?: DjData;
+  /** 封面 */
   cover: string;
+  /** 封面大小 */
   coverSize?: CoverSize;
+  /** 时长 */
   duration: number;
-  // 0: 未知 | 1: 原曲 | 2: 翻唱
+  /**
+   * 原曲类型
+   * 0: 未知 | 1: 原曲 | 2: 翻唱
+   */
   originCoverType?: number;
+  /** 别名 */
   alia?: string;
-  // 0: 免费或无版权 | 1: VIP 歌曲 | 4: 购买专辑 | 8: 非会员可免费播放低音质，会员可播放高音质及下载
+  /** 免费或无版权
+   * 1: VIP 歌曲 | 4: 购买专辑 | 8: 非会员可免费播放低音质，会员可播放高音质及下载 */
   free: 0 | 1 | 4 | 8;
+  /** MV */
   mv: number | null;
+  /** 本地路径 */
   path?: string;
+  /** 是否为云盘歌曲 */
   pc?: boolean;
+  /** 大小 */
   size?: number;
+  /** 音质 */
   quality?: QualityType;
+  /** 创建时间 */
   createTime?: number;
+  /** 更新时间 */
   updateTime?: number;
+  /** 播放量 */
   playCount?: number;
-  // 歌曲类型
+  /**
+   * 歌曲类型
+   * song: 歌曲 | radio: 电台
+   */
   type: "song" | "radio";
+  /**
+   * 是否为心动模式插入的歌曲，
+   * 用于在退出心动模式时清理这些歌曲
+   */
+  isRecommendation?: boolean;
 };
 
 // Cover
@@ -98,6 +136,24 @@ export type CoverType = {
     second: string;
   }[];
 };
+
+/** 本地歌单类型 */
+export interface LocalPlaylistType {
+  /** 歌单ID（16位数字） */
+  id: number;
+  /** 歌单名称 */
+  name: string;
+  /** 歌单描述 */
+  description?: string;
+  /** 歌单封面 */
+  cover?: string;
+  /** 歌曲ID数组 */
+  songs: string[];
+  /** 创建时间 */
+  createTime: number;
+  /** 更新时间 */
+  updateTime: number;
+}
 
 // Artist
 export type ArtistType = {
@@ -131,14 +187,6 @@ export type CommentType = {
   liked?: boolean;
   likedCount?: number;
 };
-
-/**
- * 播放模式
- * - repeat: 重复播放
- * - repeat-once: 重复播放当前歌曲
- * - shuffle: 随机播放
- */
-export type PlayModeType = "repeat" | "repeat-once" | "shuffle";
 
 /**
  * 歌词内容类型
@@ -242,7 +290,15 @@ export type SongLevelDataType = {
 };
 
 // setting
-export type SettingType = "general" | "play" | "lyrics" | "keyboard" | "local" | "other" | "about";
+export type SettingType =
+  | "general"
+  | "play"
+  | "lyrics"
+  | "keyboard"
+  | "local"
+  | "third"
+  | "other"
+  | "about";
 
 // UpdateLog
 export type UpdateLogType = {

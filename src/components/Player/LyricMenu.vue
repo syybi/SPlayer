@@ -1,16 +1,44 @@
 <template>
-  <n-flex class="menu" justify="center" vertical>
+  <n-flex :class="['menu', { show: statusStore.playerMetaShow }]" justify="center" vertical>
     <div class="menu-icon" @click="openCopyLyrics">
       <SvgIcon name="Copy" />
     </div>
     <div class="divider" />
-    <div class="menu-icon" @click="changeOffset(-500)">
+    <div class="menu-icon" @click="changeOffset(-settingStore.lyricOffsetStep)">
       <SvgIcon name="Replay5" />
     </div>
-    <span class="time" @click="resetOffset()">
-      {{ currentTimeOffsetValue }}
-    </span>
-    <div class="menu-icon" @click="changeOffset(500)">
+    <n-popover class="player" trigger="click" placement="left" style="padding: 8px">
+      <template #trigger>
+        <span class="time">
+          {{ currentTimeOffsetValue }}
+        </span>
+      </template>
+      <n-flex class="offset-menu" :size="4" vertical>
+        <span class="title"> 歌词偏移 </span>
+        <span class="tip"> 正值为歌词提前，单位毫秒 </span>
+        <n-input-number
+          v-model:value="offsetMilliseconds"
+          class="offset-input"
+          :precision="0"
+          :step="100"
+          placeholder="0"
+          size="small"
+        >
+          <template #suffix>ms</template>
+        </n-input-number>
+        <n-button
+          class="player"
+          size="small"
+          secondary
+          strong
+          @click="resetOffset"
+          :disabled="offsetMilliseconds == 0"
+        >
+          清零
+        </n-button>
+      </n-flex>
+    </n-popover>
+    <div class="menu-icon" @click="changeOffset(settingStore.lyricOffsetStep)">
       <SvgIcon name="Forward5" />
     </div>
     <div class="divider" />
@@ -21,10 +49,11 @@
 </template>
 
 <script setup lang="ts">
-import { useMusicStore, useStatusStore } from "@/stores";
+import { useMusicStore, useSettingStore, useStatusStore } from "@/stores";
 import { openSetting, openCopyLyrics } from "@/utils/modal";
 
 const musicStore = useMusicStore();
+const settingStore = useSettingStore();
 const statusStore = useStatusStore();
 
 /**
@@ -33,13 +62,23 @@ const statusStore = useStatusStore();
 const currentSongId = computed(() => musicStore.playSong?.id as number | undefined);
 
 /**
- * 当前进度偏移值（显示为秒，保留1位小数）
+ * 当前进度偏移值
  */
 const currentTimeOffsetValue = computed(() => {
   const currentTimeOffset = statusStore.getSongOffset(currentSongId.value);
-  // 将毫秒转换为秒显示（保留1位小数）
-  const offsetSeconds = (currentTimeOffset / 1000).toFixed(1);
-  return currentTimeOffset > 0 ? `+${offsetSeconds}` : offsetSeconds;
+  if (currentTimeOffset === 0) return "0";
+  // 将毫秒转换为秒显示
+  const offsetSeconds = parseFloat((currentTimeOffset / 1000).toFixed(2));
+  return currentTimeOffset > 0 ? `+${offsetSeconds}` : `${offsetSeconds}`;
+});
+
+const offsetMilliseconds = computed({
+  get: () => {
+    return statusStore.getSongOffset(currentSongId.value);
+  },
+  set: (val: number | null) => {
+    statusStore.setSongOffset(currentSongId.value, val || 0);
+  },
 });
 
 /**
@@ -123,11 +162,43 @@ const resetOffset = () => {
   }
 }
 
+.offset-menu {
+  width: 180px;
+  .title {
+    font-size: 14px;
+    line-height: normal;
+  }
+  .tip {
+    font-size: 12px;
+    opacity: 0.6;
+  }
+  :deep(.n-input) {
+    --n-caret-color: rgb(var(--main-cover-color));
+    --n-color: rgba(var(--main-cover-color), 0.1);
+    --n-color-focus: rgba(var(--main-cover-color), 0.1);
+    --n-text-color: rgb(var(--main-cover-color));
+    --n-border-hover: 1px solid rgba(var(--main-cover-color), 0.28);
+    --n-border-focus: 1px solid rgba(var(--main-cover-color), 0.28);
+    --n-suffix-text-color: rgb(var(--main-cover-color));
+    --n-box-shadow-focus: 0 0 8px 0 rgba(var(--main-cover-color), 0.3);
+    // 文本选中颜色
+    input {
+      &::selection {
+        background-color: rgba(var(--main-cover-color));
+      }
+    }
+    .n-button {
+      --n-text-color: rgb(var(--main-cover-color));
+    }
+  }
+}
 .lyric,
 .lyric-am {
   &:hover {
     .menu {
-      opacity: 0.6;
+      &.show {
+        opacity: 0.6;
+      }
     }
   }
 }

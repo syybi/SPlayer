@@ -79,13 +79,15 @@
 
 <script setup lang="ts">
 import { useMusicStore, useStatusStore, useSettingStore } from "@/stores";
-import blob from "@/utils/blob";
+import { useBlobURLManager } from "@/core/resource/BlobURLManager";
 import { isElectron } from "@/utils/env";
 import init from "@/utils/init";
 
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
+
+const blobURLManager = useBlobURLManager();
 
 // 主内容
 const contentRef = ref<HTMLElement | null>(null);
@@ -97,13 +99,13 @@ watchEffect(() => {
   statusStore.mainContentHeight = contentHeight.value;
 });
 
-onMounted(async () => {
-  await init();
+onMounted(() => {
+  init();
   if (!isElectron) {
     window.addEventListener("beforeunload", (event) => {
       event.preventDefault();
       // 释放所有 blob URL
-      blob.revokeAllBlobURLs();
+      blobURLManager.revokeAllBlobURLs();
       event.returnValue = "";
     });
   }
@@ -142,9 +144,6 @@ onMounted(async () => {
     }
   }
   &.show-player {
-    // #main-sider {
-    //   margin-bottom: 80px;
-    // }
     #main-content {
       bottom: 80px;
     }

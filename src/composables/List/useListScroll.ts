@@ -7,10 +7,14 @@ export const useListScroll = () => {
   /**
    * 处理列表滚动
    */
-  const handleListScroll = (e: Event) => {
-    const scrollTop = (e.target as HTMLElement).scrollTop;
-    listScrolling.value = scrollTop > 10;
-  };
+  const handleListScroll = useThrottleFn(
+    (e: Event) => {
+      const scrollTop = (e.target as HTMLElement).scrollTop;
+      listScrolling.value = scrollTop > 10;
+    },
+    100,
+    true,
+  );
 
   /**
    * 重置滚动状态

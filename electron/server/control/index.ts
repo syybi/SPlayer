@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { appVersion, appName } from "../../main/utils/config";
+import { getTrackInfoFromRenderer } from "../../main/utils/track-info";
 import mainWindow from "../../main/windows/main-window";
 
 /**
@@ -194,6 +195,24 @@ export const initControlAPI = async (fastify: FastifyInstance) => {
             code: 500,
             message: "获取状态失败",
             data: error,
+          });
+        }
+      });
+
+      // 获取当前播放信息
+      fastify.get("/song-info", async (_request, reply) => {
+        try {
+          const trackInfo = await getTrackInfoFromRenderer();
+          return reply.send({
+            code: 200,
+            message: "获取当前播放信息成功",
+            data: trackInfo,
+          });
+        } catch (error) {
+          return reply.code(500).send({
+            code: 500,
+            message: "获取当前播放信息失败",
+            data: error instanceof Error ? error.message : error,
           });
         }
       });

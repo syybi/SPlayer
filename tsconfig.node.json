@@ -3,6 +3,7 @@
   "include": [
     "electron.vite.config.*",
     "electron/**/*",
+    "electron/main/**/*.d.ts",
     "electron/main/index.ts",
     "electron/main/logger/index.ts",
     "electron/main/store/index.ts",
@@ -10,10 +11,16 @@
     "electron/main/index.d.ts",
     "electron/preload/index.d.ts",
     "electron/preload/index.ts",
-    "src/assets/data/*"
+    "src/assets/data/*",
+    "src/types/shared.ts",
+    "scripts/*"
   ],
   "compilerOptions": {
     "composite": true,
-    "types": ["electron-vite/node"]
+    "types": ["electron-vite/node"],
+    "paths": {
+      "@emi": ["./native/external-media-integration"],
+      "@shared": ["./src/types/shared.ts"]
+    }
   }
 }

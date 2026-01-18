@@ -21,7 +21,11 @@
             <SvgIcon name="AddList" />
           </div>
           <!-- 下载 -->
-          <div class="menu-icon" @click.stop="openDownloadSong(musicStore.playSong)">
+          <div
+            class="menu-icon"
+            v-if="!musicStore.playSong.path && statusStore.isDeveloperMode"
+            @click.stop="openDownloadSong(musicStore.playSong)"
+          >
             <SvgIcon name="Download" />
           </div>
           <!-- 显示评论 -->
@@ -35,11 +39,21 @@
         </n-flex>
         <div class="center">
           <div class="btn">
+            <!-- 随机按钮 -->
+            <template v-if="musicStore.playSong.type !== 'radio' && !statusStore.personalFmMode">
+              <div class="btn-icon mode-icon" @click.stop="player.toggleShuffle()">
+                <SvgIcon
+                  :name="statusStore.shuffleIcon"
+                  :size="20"
+                  :depth="statusStore.shuffleMode === 'off' ? 3 : 1"
+                />
+              </div>
+            </template>
             <!-- 不喜欢 -->
             <div
               v-if="statusStore.personalFmMode"
               class="btn-icon"
-              v-debounce="() => player.personalFMTrash(musicStore.personalFMSong?.id)"
+              v-debounce="() => songManager.personalFMTrash(musicStore.personalFMSong?.id)"
             >
               <SvgIcon class="icon" :size="18" name="ThumbDown" />
             </div>
@@ -73,12 +87,22 @@
             <div class="btn-icon" v-debounce="() => player.nextOrPrev('next')">
               <SvgIcon :size="26" name="SkipNext" />
             </div>
+            <!-- 循环按钮 -->
+            <template v-if="musicStore.playSong.type !== 'radio' && !statusStore.personalFmMode">
+              <div class="btn-icon mode-icon" @click.stop="player.toggleRepeat()">
+                <SvgIcon
+                  :name="statusStore.repeatIcon"
+                  :size="20"
+                  :depth="statusStore.repeatMode === 'off' ? 3 : 1"
+                />
+              </div>
+            </template>
           </div>
           <!-- 进度条 -->
           <div class="slider">
-            <span>{{ msToTime(statusStore.currentTime) }}</span>
+            <span @click="toggleTimeFormat">{{ timeDisplay[0] }}</span>
             <PlayerSlider :show-tooltip="false" />
-            <span>{{ msToTime(statusStore.duration) }}</span>
+            <span @click="toggleTimeFormat">{{ timeDisplay[1] }}</span>
           </div>
         </div>
         <n-flex class="right" align="center" justify="end">
@@ -91,16 +115,21 @@
 </template>
 
 <script setup lang="ts">
-import { useMusicStore, useStatusStore, useDataStore } from "@/stores";
-import { msToTime } from "@/utils/time";
-import { openDownloadSong, openPlaylistAdd } from "@/utils/modal";
+import { usePlayerController } from "@/core/player/PlayerController";
+import { useSongManager } from "@/core/player/SongManager";
+import { useDataStore, useMusicStore, useStatusStore } from "@/stores";
 import { toLikeSong } from "@/utils/auth";
-import { usePlayer } from "@/utils/player";
+import { useTimeFormat } from "@/composables/useTimeFormat";
+import { openDownloadSong, openPlaylistAdd } from "@/utils/modal";
 
-const player = usePlayer();
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
+
+const songManager = useSongManager();
+const player = usePlayerController();
+
+const { timeDisplay, toggleTimeFormat } = useTimeFormat();
 </script>
 
 <style lang="scss" scoped>
@@ -108,7 +137,6 @@ const statusStore = useStatusStore();
   width: 100%;
   height: 80px;
   overflow: hidden;
-  cursor: pointer;
   .control-content {
     width: 100%;
     height: 100%;
@@ -174,6 +202,8 @@ const statusStore = useStatusStore();
           background-color 0.3s,
           transform 0.3s;
         cursor: pointer;
+        margin: 0 4px;
+
         .n-icon {
           color: rgb(var(--main-cover-color));
         }
@@ -219,7 +249,6 @@ const statusStore = useStatusStore();
       width: 100%;
       max-width: 480px;
       font-size: 12px;
-      cursor: pointer;
       .n-slider {
         margin: 6px 8px;
         --n-handle-size: 12px;
@@ -227,6 +256,7 @@ const statusStore = useStatusStore();
       }
       span {
         opacity: 0.6;
+        cursor: pointer;
       }
     }
   }

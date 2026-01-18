@@ -1,12 +1,12 @@
-import { isElectron } from "./env";
-import { openSetting, openUpdateApp } from "./modal";
-import { useMusicStore, useDataStore, useStatusStore } from "@/stores";
-import { toLikeSong } from "./auth";
-import { usePlayer } from "./player";
-import { cloneDeep } from "lodash-es";
-import songManager from "./songManager";
+import { usePlayerController } from "@/core/player/PlayerController";
+import { useDataStore, useMusicStore, useStatusStore } from "@/stores";
 import { SettingType } from "@/types/main";
 import { handleProtocolUrl } from "@/utils/protocol";
+import { cloneDeep } from "lodash-es";
+import { toLikeSong } from "./auth";
+import { isElectron } from "./env";
+import { getPlayerInfoObj } from "./format";
+import { openSetting, openUpdateApp } from "./modal";
 
 // 关闭更新状态
 const closeUpdateStatus = () => {
@@ -18,7 +18,7 @@ const closeUpdateStatus = () => {
 const initIpc = () => {
   try {
     if (!isElectron) return;
-    const player = usePlayer();
+    const player = usePlayerController();
     // 播放
     window.electron.ipcRenderer.on("play", () => player.play());
     // 暂停
@@ -34,25 +34,28 @@ const initIpc = () => {
     // 音量减
     window.electron.ipcRenderer.on("volumeDown", () => player.setVolume("down"));
     // 播放模式切换
-    window.electron.ipcRenderer.on("changeMode", (_, mode) => player.togglePlayMode(mode));
+    window.electron.ipcRenderer.on("changeRepeat", (_, mode) => player.toggleRepeat(mode));
+    window.electron.ipcRenderer.on("toggleShuffle", (_, mode) => player.toggleShuffle(mode));
     // 喜欢歌曲
-    window.electron.ipcRenderer.on("toogleLikeSong", async () => {
+    window.electron.ipcRenderer.on("toggle-like-song", async () => {
       const dataStore = useDataStore();
       const musicStore = useMusicStore();
       await toLikeSong(musicStore.playSong, !dataStore.isLikeSong(musicStore.playSong.id));
     });
     // 开启设置
-    window.electron.ipcRenderer.on("openSetting", (_, type: SettingType) => openSetting(type));
+    window.electron.ipcRenderer.on("openSetting", (_, type: SettingType, scrollTo?: string) =>
+      openSetting(type, scrollTo),
+    );
     // 桌面歌词开关
-    window.electron.ipcRenderer.on("toogleDesktopLyric", () => player.toggleDesktopLyric());
+    window.electron.ipcRenderer.on("toggle-desktop-lyric", () => player.toggleDesktopLyric());
     // 显式关闭桌面歌词
-    window.electron.ipcRenderer.on("closeDesktopLyric", () => player.setDesktopLyricShow(false));
+    window.electron.ipcRenderer.on("close-desktop-lyric", () => player.setDesktopLyricShow(false));
     // 请求歌词数据
     window.electron.ipcRenderer.on("request-desktop-lyric-data", () => {
       const musicStore = useMusicStore();
       const statusStore = useStatusStore();
       if (player) {
-        const { name, artist } = songManager.getPlayerInfoObj() || {};
+        const { name, artist } = getPlayerInfoObj() || {};
         window.electron.ipcRenderer.send(
           "update-desktop-lyric-data",
           cloneDeep({
@@ -65,6 +68,7 @@ const initIpc = () => {
             lrcData: musicStore.songLyric.lrcData ?? [],
             yrcData: musicStore.songLyric.yrcData ?? [],
             lyricIndex: statusStore.lyricIndex,
+            lyricLoading: statusStore.lyricLoading,
           }),
         );
       }
@@ -89,6 +93,35 @@ const initIpc = () => {
     window.electron.ipcRenderer.on("protocol-url", (_, url) => {
       console.log("📡 Received protocol url:", url);
       handleProtocolUrl(url);
+    });
+    // 请求播放信息
+    window.electron.ipcRenderer.on("request-track-info", () => {
+      const musicStore = useMusicStore();
+      const statusStore = useStatusStore();
+      const { name, artist, album } = getPlayerInfoObj() || {};
+      // 获取原始对象
+      const playSong = toRaw(musicStore.playSong);
+      const songLyric = statusStore.lyricLoading
+        ? { lrcData: [], yrcData: [] }
+        : toRaw(musicStore.songLyric);
+      window.electron.ipcRenderer.send(
+        "return-track-info",
+        cloneDeep({
+          playStatus: statusStore.playStatus,
+          playName: name,
+          artistName: artist,
+          albumName: album,
+          currentTime: statusStore.currentTime,
+          // 音量及播放速率
+          volume: statusStore.playVolume,
+          playRate: statusStore.playRate,
+          ...playSong,
+          // 歌词及加载状态
+          lyricLoading: statusStore.lyricLoading,
+          lyricIndex: statusStore.lyricIndex,
+          ...songLyric,
+        }),
+      );
     });
   } catch (error) {
     console.log(error);

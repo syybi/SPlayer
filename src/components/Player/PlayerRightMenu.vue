@@ -1,7 +1,7 @@
 <template>
   <n-flex :size="8" align="center" class="right-menu">
     <n-badge v-if="isElectron" value="ON" :show="statusStore.showDesktopLyric">
-      <div class="menu-icon" @click.stop="player.toggleDesktopLyric">
+      <div class="menu-icon" @click.stop="player.toggleDesktopLyric()">
         <SvgIcon name="DesktopLyric2" :depth="statusStore.showDesktopLyric ? 1 : 3" />
       </div>
     </n-badge>
@@ -10,24 +10,13 @@
       :options="controlsOptions"
       :show-arrow="false"
       :class="{ player: statusStore.showFullPlayer }"
+      @select="handleControls"
     >
       <div class="menu-icon">
         <SvgIcon name="Controls" />
       </div>
     </n-dropdown>
-    <!-- 播放模式 -->
-    <n-dropdown
-      v-if="musicStore.playSong.type !== 'radio' && !statusStore.personalFmMode"
-      :options="playModeOptions"
-      :show-arrow="false"
-      :class="{ player: statusStore.showFullPlayer }"
-      @select="(mode) => player.togglePlayMode(mode)"
-    >
-      <div class="menu-icon" @click.stop="player.togglePlayMode(false)">
-        <SvgIcon :name="statusStore.playModeIcon" />
-      </div>
-    </n-dropdown>
-    <!-- 音量调节 -->
+
     <n-popover
       :show-arrow="false"
       :style="{ padding: 0 }"
@@ -69,65 +58,57 @@
 </template>
 
 <script setup lang="ts">
-import type { DropdownOption } from "naive-ui";
-import { useMusicStore, useStatusStore, useDataStore, useSettingStore } from "@/stores";
-import { openAutoClose, openChangeRate, openEqualizer } from "@/utils/modal";
+import { usePlayerController } from "@/core/player/PlayerController";
+import { useDataStore, useSettingStore, useStatusStore } from "@/stores";
 import { isElectron } from "@/utils/env";
 import { renderIcon } from "@/utils/helper";
-import { usePlayer } from "@/utils/player";
+import { openAutoClose, openChangeRate, openEqualizer } from "@/utils/modal";
+import type { DropdownOption } from "naive-ui";
 
-const player = usePlayer();
 const dataStore = useDataStore();
-const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
+const player = usePlayerController();
 
-// 播放模式数据
-const playModeOptions: DropdownOption[] = [
-  {
-    label: "列表循环",
-    key: "repeat",
-    icon: renderIcon("Repeat"),
-  },
-  {
-    label: "单曲循环",
-    key: "repeat-once",
-    icon: renderIcon("RepeatSong"),
-  },
-  {
-    label: "随机播放",
-    key: "shuffle",
-    icon: renderIcon("Shuffle"),
-  },
-];
-
-// 其他控制：播放速度下拉菜单
+// 更多功能
 const controlsOptions = computed<DropdownOption[]>(() => [
   {
     label: "均衡器",
     key: "equalizer",
     icon: renderIcon("Eq"),
-    props: {
-      onClick: () => openEqualizer(),
-    },
+    disabled: settingStore.playbackEngine === "mpv",
   },
   {
     label: "自动关闭",
     key: "autoClose",
     icon: renderIcon("TimeAuto"),
-    props: {
-      onClick: () => openAutoClose(),
-    },
   },
   {
     label: "播放速度",
     key: "rate",
+    disabled: settingStore.audioEngine === "ffmpeg" && settingStore.playbackEngine !== "mpv",
     icon: renderIcon("PlayRate"),
-    props: {
-      onClick: () => openChangeRate(),
-    },
   },
 ]);
+
+// 更多功能选择
+const handleControls = (key: string) => {
+  switch (key) {
+    case "equalizer":
+      if (settingStore.playbackEngine === "mpv") {
+        window.$message.warning("MPV 引擎不支持均衡器功能");
+        return;
+      }
+      openEqualizer();
+      break;
+    case "autoClose":
+      openAutoClose();
+      break;
+    case "rate":
+      openChangeRate();
+      break;
+  }
+};
 </script>
 
 <style scoped lang="scss">

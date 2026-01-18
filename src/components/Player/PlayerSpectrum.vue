@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { usePlayer } from "@/utils/player";
+import { usePlayerController } from "@/core/player/PlayerController";
 
 const props = defineProps<{
   show: boolean;
@@ -14,7 +14,7 @@ const props = defineProps<{
   color?: string;
 }>();
 
-const player = usePlayer();
+const player = usePlayerController();
 
 // canvas
 const canvasRef = ref<HTMLCanvasElement | null>(null);

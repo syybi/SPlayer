@@ -2,8 +2,8 @@
 <template>
   <div class="radio-list">
     <ListDetail
-      :detail-data="detailData"
-      :list-data="listData"
+      :detail-data="detailData?.id === radioId ? detailData : null"
+      :list-data="detailData?.id === radioId ? listData : []"
       :loading="showLoading"
       :list-scrolling="listScrolling"
       :search-value="searchValue"
@@ -35,7 +35,7 @@
       <template v-if="currentTab === 'songs'">
         <SongList
           v-if="!searchValue || searchData?.length"
-          :data="displayData"
+          :data="detailData?.id === radioId ? displayData : []"
           :loading="loading"
           :height="songListHeight"
           :radioId="radioId"
@@ -73,6 +73,7 @@ import { useListSearch } from "@/composables/List/useListSearch";
 import { useListScroll } from "@/composables/List/useListScroll";
 import { useListActions } from "@/composables/List/useListActions";
 import { toSubRadio } from "@/utils/auth";
+import { useListDataCache, type ListCacheData } from "@/composables/List/useListDataCache";
 import ListComment from "@/components/List/ListComment.vue";
 
 const router = useRouter();
@@ -92,6 +93,7 @@ const { searchValue, searchData, displayData, clearSearch, performSearch } =
   useListSearch(listData);
 const { listScrolling, handleListScroll } = useListScroll();
 const { playAllSongs: playAllSongsAction } = useListActions();
+const { saveCache, loadCache, checkNeedsUpdate } = useListDataCache();
 
 // 电台 ID
 const oldRadioId = ref<number>(0);
@@ -149,6 +151,14 @@ const playButtonText = computed(() => {
 // 更多操作
 const moreOptions = computed<DropdownOption[]>(() => [
   {
+    label: "刷新缓存",
+    key: "refresh-cache",
+    props: {
+      onClick: () => getRadioDetail(radioId.value, true),
+    },
+    icon: renderIcon("Refresh"),
+  },
+  {
     label: "刷新播客",
     key: "refresh",
     props: {
@@ -178,7 +188,7 @@ const moreOptions = computed<DropdownOption[]>(() => [
 ]);
 
 // 获取播客基础信息
-const getRadioDetail = async (id: number) => {
+const getRadioDetail = async (id: number, refresh: boolean = false) => {
   if (!id) return;
   // 设置当前请求的播客 ID，用于防止竞态条件
   currentRequestId.value = id;
@@ -186,8 +196,25 @@ const getRadioDetail = async (id: number) => {
   setLoading(true);
   // 清空数据
   clearSearch();
+
+  // 1. 尝试读取缓存
+  if (!refresh) {
+    const cached = await loadCache("radio", id);
+    if (cached) {
+      setDetailData(cached.detail);
+      setListData(cached.songs);
+      setLoading(false);
+
+      // 后台检查更新
+      backgroundCheck(id, cached);
+      return;
+    }
+  }
+
   // 获取播客详情
-  setDetailData(null);
+  if (detailData.value?.id !== id) {
+    setDetailData(null);
+  }
   const detail = await radioDetail(id);
   if (currentRequestId.value !== id) return;
   setDetailData(formatCoverList(detail.data)[0]);
@@ -195,11 +222,27 @@ const getRadioDetail = async (id: number) => {
   await getRadioAllProgram(id, detailData.value?.count as number);
 };
 
+// 后台检查更新
+const backgroundCheck = async (id: number, cached: ListCacheData) => {
+  try {
+    const detail = await radioDetail(id);
+    if (currentRequestId.value !== id) return;
+
+    const latestDetail = formatCoverList(detail.data)[0];
+
+    if (checkNeedsUpdate(cached, latestDetail)) {
+      console.log("Radio cache expired, refreshing...");
+      getRadioDetail(id, true);
+    }
+  } catch (e) {
+    console.error("Radio background check failed", e);
+  }
+};
+
 // 获取播客全部歌曲
 const getRadioAllProgram = async (id: number, count: number) => {
   if (!id || !count) return;
   setLoading(true);
-  setListData([]);
   // 加载提示
   if (count > 500) loadingMsgShow();
   // 循环获取
@@ -224,6 +267,11 @@ const getRadioAllProgram = async (id: number, count: number) => {
     loadingMsgShow(false);
     return;
   }
+  // 保存缓存
+  if (detailData.value && listData.value.length > 0) {
+    saveCache("radio", id, detailData.value, listData.value);
+  }
+
   // 关闭加载
   loadingMsgShow(false);
 };
@@ -273,11 +321,8 @@ onActivated(() => {
   if (oldRadioId.value === 0) {
     oldRadioId.value = radioId.value;
   } else {
-    // 是否不相同
-    const isSame = oldRadioId.value === radioId.value;
     oldRadioId.value = radioId.value;
-    // 刷新播客
-    if (!isSame) getRadioDetail(radioId.value);
+    getRadioDetail(radioId.value, false);
   }
 });
 

@@ -2,15 +2,15 @@
 <template>
   <div class="playlist-list">
     <ListDetail
-      :detail-data="detailData"
-      :list-data="listData"
+      :detail-data="detailData?.id === playlistId ? detailData : null"
+      :list-data="detailData?.id === playlistId ? listData : []"
       :loading="showLoading"
       :list-scrolling="listScrolling"
       :search-value="searchValue"
       :config="listConfig"
       :play-button-text="playButtonText"
       :more-options="moreOptions"
-      :show-comment-tab="true"
+      :show-comment-tab="!isLocalPlaylist"
       @update:search-value="handleSearchUpdate"
       @play-all="playAllSongs"
       @tab-change="handleTabChange"
@@ -49,7 +49,7 @@
       <template v-if="currentTab === 'songs'">
         <SongList
           v-if="!searchValue || searchData?.length"
-          :data="displayData"
+          :data="detailData?.id === playlistId ? displayData : []"
           :loading="loading"
           :height="songListHeight"
           :playListId="playlistId"
@@ -89,15 +89,17 @@ import {
 import { formatCoverList, formatSongsList } from "@/utils/format";
 import { renderIcon, copyData } from "@/utils/helper";
 import { isLogin, toLikePlaylist, updateUserLikePlaylist } from "@/utils/auth";
-import { useDataStore } from "@/stores";
+import { useDataStore, useLocalStore } from "@/stores";
 import { openBatchList, openUpdatePlaylist } from "@/utils/modal";
 import { useListDetail } from "@/composables/List/useListDetail";
 import { useListSearch } from "@/composables/List/useListSearch";
 import { useListScroll } from "@/composables/List/useListScroll";
 import { useListActions } from "@/composables/List/useListActions";
+import { useListDataCache, type ListCacheData } from "@/composables/List/useListDataCache";
 
 const router = useRouter();
 const dataStore = useDataStore();
+const localStore = useLocalStore();
 
 const {
   detailData,
@@ -113,6 +115,7 @@ const { searchValue, searchData, displayData, clearSearch, performSearch } =
   useListSearch(listData);
 const { listScrolling, handleListScroll, resetScroll } = useListScroll();
 const { playAllSongs: playAllSongsAction } = useListActions();
+const { saveCache, loadCache, checkNeedsUpdate } = useListDataCache();
 
 // 歌单 ID
 const oldPlaylistId = ref<number>(0);
@@ -130,8 +133,14 @@ const songListHeight = computed(() => getSongListHeight(listScrolling.value));
 // 当前 tab
 const currentTab = ref<"songs" | "comments">("songs");
 
+// 是否为本地歌单
+const isLocalPlaylist = computed(() => {
+  return playlistId.value.toString().length === 16;
+});
+
 // 是否为用户歌单
 const isUserPlaylist = computed(() => {
+  if (isLocalPlaylist.value) return true;
   return detailData.value?.creator?.id === dataStore.userData?.userId;
 });
 
@@ -147,15 +156,15 @@ const isPlaylistPage = computed<boolean>(() => router.currentRoute.value.name ==
 const isSamePlaylist = computed<boolean>(() => oldPlaylistId.value === playlistId.value);
 
 // 列表配置
-const listConfig = {
+const listConfig = computed(() => ({
   titleType: "normal" as const,
   showCoverMask: true,
-  showPlayCount: true,
+  showPlayCount: !isLocalPlaylist.value,
   showArtist: false,
-  showCreator: true,
+  showCreator: !isLocalPlaylist.value,
   showCount: false,
   searchAlign: "center" as const,
-};
+}));
 
 // 是否显示加载状态
 const showLoading = computed(() => listData.value.length === 0 && loading.value);
@@ -176,9 +185,18 @@ const playButtonText = computed(() => {
 // 更多操作
 const moreOptions = computed<DropdownOption[]>(() => [
   {
+    label: "刷新缓存",
+    key: "refresh",
+    show: !isLocalPlaylist.value,
+    props: {
+      onClick: () => getPlaylistDetail(playlistId.value, { getList: true, refresh: true }),
+    },
+    icon: renderIcon("Refresh"),
+  },
+  {
     label: "公开隐私歌单",
     key: "privacy",
-    show: detailData.value?.privacy === 10,
+    show: !isLocalPlaylist.value && detailData.value?.privacy === 10,
     props: { onClick: openPrivacy },
     icon: renderIcon("ListLockOpen"),
   },
@@ -198,7 +216,7 @@ const moreOptions = computed<DropdownOption[]>(() => [
       onClick: () =>
         openBatchList(
           displayData.value,
-          false,
+          isLocalPlaylist.value,
           isUserPlaylist.value ? playlistId.value : undefined,
         ),
     },
@@ -207,6 +225,7 @@ const moreOptions = computed<DropdownOption[]>(() => [
   {
     label: "复制分享链接",
     key: "copy",
+    show: !isLocalPlaylist.value,
     props: {
       onClick: () =>
         copyData(
@@ -219,6 +238,7 @@ const moreOptions = computed<DropdownOption[]>(() => [
   {
     label: "打开源页面",
     key: "open",
+    show: !isLocalPlaylist.value,
     props: {
       onClick: () => {
         window.open(`https://music.163.com/#/playlist?id=${playlistId.value}`);
@@ -241,7 +261,7 @@ const getPlaylistDetail = async (
   const { getList, refresh } = options;
   // 清空数据
   clearSearch();
-  if (!refresh) resetPlaylistData(getList);
+  if (!refresh && detailData.value?.id !== id) resetPlaylistData(getList);
   // 判断是否为本地歌单，本地歌单 ID 为 16 位
   const isLocal = id.toString().length === 16;
   // 本地歌单
@@ -261,11 +281,48 @@ const resetPlaylistData = (getList: boolean) => {
 
 // 获取本地歌单
 const handleLocalPlaylist = (id: number) => {
-  console.log(id);
+  const result = localStore.getLocalPlaylistDetail(id);
+  if (!result) {
+    window.$message.error("本地歌单不存在");
+    setLoading(false);
+    return;
+  }
+  const { playlist, songs } = result;
+  // 获取封面：优先使用歌单封面，否则取第一首歌曲的封面
+  let cover = playlist.cover;
+  if (!cover && songs.length > 0) {
+    cover = songs[0].cover;
+  }
+  // 转换为 CoverType 格式
+  setDetailData({
+    id: playlist.id,
+    name: playlist.name,
+    cover: cover || "/images/album.jpg?asset",
+    description: playlist.description,
+    count: playlist.songs.length,
+    createTime: playlist.createTime,
+    updateTime: playlist.updateTime,
+  });
+  setListData(songs);
+  setLoading(false);
 };
 
 // 获取在线歌单
 const handleOnlinePlaylist = async (id: number, getList: boolean, refresh: boolean) => {
+  // 1. 尝试读取缓存
+  if (!refresh && getList) {
+    const cached = await loadCache("playlist", id);
+    if (cached) {
+      setDetailData(cached.detail);
+      setListData(cached.songs);
+      setLoading(false);
+
+      // 后台检查更新
+      backgroundCheck(id, cached);
+      return;
+    }
+  }
+
   // 获取歌单详情
   const detail = await playlistDetail(id);
   // 检查是否仍然是当前请求的歌单
@@ -283,13 +340,33 @@ const handleOnlinePlaylist = async (id: number, getList: boolean, refresh: boole
     const result = await songDetail(ids);
     // 检查是否仍然是当前请求的歌单
     if (currentRequestId.value !== id) return;
-    setListData(formatSongsList(result.songs));
+    const songs = formatSongsList(result.songs);
+    setListData(songs);
+    // 保存缓存
+    saveCache("playlist", id, detailData.value!, songs);
   } else {
     await getPlaylistAllSongs(id, count, refresh);
   }
   // 检查是否仍然是当前请求的歌单
   if (currentRequestId.value !== id) return;
   setLoading(false);
+};
+
+// 后台检查更新
+const backgroundCheck = async (id: number, cached: ListCacheData) => {
+  try {
+    const detail = await playlistDetail(id);
+    if (currentRequestId.value !== id) return;
+
+    const latestDetail = formatCoverList(detail.playlist)[0];
+
+    if (checkNeedsUpdate(cached, latestDetail)) {
+      console.log("Cache expired, refreshing...");
+      handleOnlinePlaylist(id, true, true);
+    }
+  } catch (e) {
+    console.error("Background check failed", e);
+  }
 };
 
 // 获取歌单全部歌曲
@@ -332,6 +409,11 @@ const getPlaylistAllSongs = async (
     return;
   }
   if (refresh) setListData(listDataArray);
+  // 保存缓存
+  if (detailData.value && listDataArray.length > 0) {
+    saveCache("playlist", id, detailData.value, listDataArray);
+  }
+
   // 关闭加载
   loadingMsgShow(false);
 };
@@ -377,6 +459,18 @@ const toDeletePlaylist = async () => {
     positiveText: "删除",
     negativeText: "取消",
     onPositiveClick: async () => {
+      // 本地歌单
+      if (isLocalPlaylist.value) {
+        const success = await localStore.deleteLocalPlaylist(playlistId.value);
+        if (success) {
+          window.$message.success("本地歌单删除成功");
+          router.back();
+        } else {
+          window.$message.error("删除失败");
+        }
+        return;
+      }
+      // 在线歌单
       const result = await deletePlaylist(playlistId.value);
       if (result.code === 200) {
         window.$message.success("歌单删除成功");
@@ -434,11 +528,9 @@ onActivated(() => {
   if (oldPlaylistId.value === 0) {
     oldPlaylistId.value = playlistId.value;
   } else {
-    // 是否不相同
-    const isSame = oldPlaylistId.value === playlistId.value;
     oldPlaylistId.value = playlistId.value;
     // 刷新歌单
-    getPlaylistDetail(playlistId.value, { getList: true, refresh: isSame });
+    getPlaylistDetail(playlistId.value, { getList: true, refresh: false });
   }
 });
 
