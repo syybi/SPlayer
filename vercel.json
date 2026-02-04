@@ -1,12 +1,6 @@
 {
-  "build": {
-    "env": {
-      "ENABLE_EXPERIMENTAL_COREPACK": "1",
-      "SKIP_NATIVE_BUILD": "true"
-    }
-  },
   "outputDirectory": "out/renderer",
-  "buildCommand": "rimraf dist out && electron-vite build",
+  "buildCommand": "SKIP_NATIVE_BUILD=true rimraf dist out && electron-vite build",
   "framework": null,
-  "installCommand": "corepack enable && corepack prepare pnpm@10 --activate && pnpm install --ignore-scripts"
+  "installCommand": "pnpm install --ignore-scripts"
 }
