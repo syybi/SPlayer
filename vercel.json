@@ -2,5 +2,11 @@
   "outputDirectory": "out/renderer",
   "buildCommand": "SKIP_NATIVE_BUILD=true rimraf dist out && electron-vite build",
   "framework": null,
-  "installCommand": "pnpm install --ignore-scripts"
+  "installCommand": "corepack enable && corepack prepare pnpm@10 --activate && pnpm install --ignore-scripts",
+  "build": {
+    "env": {
+      "COREPACK_ENABLE_DOWNLOADS": "1",
+      "SKIP_NATIVE_BUILD": "true"
+    }
+  }
 }
