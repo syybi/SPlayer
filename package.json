@@ -11,10 +11,10 @@
   "repository": "github:imsyy/SPlayer",
   "license": "AGPL-3.0",
   "license-file": "LICENSE",
-  "packageManager": "pnpm@10.6.5",
   "engines": {
     "node": ">=20",
-    "npm": ">=11"
+    "npm": ">=11",
+    "pnpm": ">=10"
   },
   "type": "module",
   "scripts": {
