@@ -1,5 +1,6 @@
 import { useDataStore, useSettingStore, useShortcutStore, useStatusStore } from "@/stores";
 import { useEventListener } from "@vueuse/core";
+import { watch } from "vue";
 import { openUserAgreement } from "@/utils/modal";
 import { debounce } from "lodash-es";
 import { isElectron } from "./env";
@@ -68,10 +69,68 @@ const init = async () => {
     downloadManager.init();
     // 显示窗口
     window.electron.ipcRenderer.send("win-loaded");
+    // 同步任务栏歌词状态
+    window.electron.ipcRenderer.send("taskbar:toggle", statusStore.showTaskbarLyric);
     // 显示桌面歌词
     window.electron.ipcRenderer.send("toggle-desktop-lyric", statusStore.showDesktopLyric);
     // 检查更新
     if (settingStore.checkUpdateOnStart) window.electron.ipcRenderer.send("check-update");
+
+    // 监听任务栏歌词设置
+    watch(
+      () => settingStore.taskbarLyricMaxWidth,
+      (val) => {
+        window.electron.ipcRenderer.send("taskbar:set-max-width", val);
+      },
+    );
+
+    watch(
+      () => settingStore.taskbarLyricShowCover,
+      (val) => {
+        window.electron.ipcRenderer.send("taskbar:set-show-cover", val);
+      },
+    );
+
+    watch(
+      () => settingStore.taskbarLyricPosition,
+      (val) => {
+        window.electron.ipcRenderer.send("taskbar:set-position", val);
+      },
+    );
+
+    watch(
+      () => settingStore.taskbarLyricShowWhenPaused,
+      (val) => {
+        window.electron.ipcRenderer.send("taskbar:set-show-when-paused", val);
+      },
+    );
+
+    watch(
+      () => settingStore.taskbarLyricAutoShrink,
+      (val) => {
+        window.electron.ipcRenderer.send("taskbar:set-auto-shrink", val);
+      },
+    );
+
+    watch(
+      () => [
+        settingStore.taskbarLyricAnimationMode,
+        settingStore.taskbarLyricSingleLineMode,
+        settingStore.LyricFont,
+        settingStore.globalFont,
+        settingStore.taskbarLyricFontWeight,
+      ],
+      () => {
+        window.electron.ipcRenderer.send("taskbar:broadcast-settings", {
+          animationMode: settingStore.taskbarLyricAnimationMode,
+          singleLineMode: settingStore.taskbarLyricSingleLineMode,
+          lyricFont: settingStore.LyricFont,
+          globalFont: settingStore.globalFont,
+          fontWeight: settingStore.taskbarLyricFontWeight,
+        });
+      },
+      { deep: true },
+    );
   }
 };
 

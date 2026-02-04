@@ -56,8 +56,7 @@ const rawLyrics = computed(() => {
 
 const displayLyrics = computed(() => {
   return rawLyrics.value.map((line, index) => {
-    const text =
-      line.words?.map((w) => w.word).join("") || "";
+    const text = line.words?.map((w) => w.word).join("") || "";
     const translation = line.translatedLyric || "";
     const romaji = line.romanLyric || line.words?.map((w) => w.romanWord).join("") || "";
     return {

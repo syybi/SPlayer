@@ -31,7 +31,7 @@
           strong
           secondary
           round
-          v-debounce="() => player.updatePlayList(cloudData)"
+          v-debounce="() => player.updatePlayList(listDataShow)"
         >
           <template #icon>
             <SvgIcon name="Play" />
@@ -73,6 +73,7 @@
         v-if="!searchValue || searchData?.length"
         :data="listDataShow"
         :loading="loading"
+        :doubleClickAction="searchData?.length ? 'add' : 'all'"
         @removeSong="handleRemoveSong"
       />
       <n-empty

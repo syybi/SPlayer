@@ -1,7 +1,14 @@
 <template>
   <n-config-provider :theme="null">
     <div
-      :class="['desktop-lyric', { locked: lyricConfig.isLock, hovered: isHovered }]"
+      :class="[
+        'desktop-lyric',
+        {
+          locked: lyricConfig.isLock,
+          hovered: isHovered,
+          'no-animation': !lyricConfig.animation,
+        },
+      ]"
       :style="{ '--mask-bg-color': lyricConfig.backgroundMaskColor }"
     >
       <div class="header" align="center" justify="space-between">
@@ -27,7 +34,10 @@
           </div>
         </n-flex>
         <n-flex :wrap="false" align="center" justify="flex-end" size="small" @pointerdown.stop>
-          <div class="menu-btn" @click.stop="sendToMain('open-setting', 'lyrics', 'desktop')">
+          <div
+            class="menu-btn"
+            @click.stop="sendToMain('open-setting', 'lyrics', 'showDesktopLyric')"
+          >
             <SvgIcon name="Settings" />
           </div>
           <div
@@ -58,7 +68,9 @@
           <span class="artist">{{ lyricData.artistName }}</span>
         </n-flex>
       </div>
-      <n-flex
+      <TransitionGroup
+        tag="div"
+        :name="transitionName"
         :style="{
           fontSize: lyricConfig.fontSize + 'px',
           fontFamily: lyricConfig.fontFamily,
@@ -66,12 +78,9 @@
           textShadow: `0 0 4px ${lyricConfig.shadowColor}`,
         }"
         :class="['lyric-container', lyricConfig.position]"
-        :size="0"
-        justify="space-around"
-        vertical
       >
-        <span
-          v-for="line in renderLyricLines"
+        <div
+          v-for="(line, index) in renderLyricLines"
           :key="line.key"
           :class="[
             'lyric-line',
@@ -79,10 +88,16 @@
               active: line.active,
               'is-yrc': Boolean(lyricData?.yrcData?.length && line.line?.words?.length > 1),
               'has-background-mask': lyricConfig.textBackgroundMask,
+              'is-next': !line.active && lyricConfig.isDoubleLine,
+              'align-left': lyricConfig.position === 'both' && line.index % 2 === 0,
+              'align-right': lyricConfig.position === 'both' && line.index % 2 !== 0,
             },
           ]"
           :style="{
             color: line.active ? lyricConfig.playedColor : lyricConfig.unplayedColor,
+            top: getLineTop(index),
+            fontSize: index > 0 ? '0.8em' : '1em',
+            '--line-index': index,
           }"
           :ref="(el) => setLineRef(el, line.key)"
         >
@@ -131,18 +146,23 @@
               {{ line.line?.words?.[0]?.word || "" }}
             </span>
           </template>
-        </span>
+        </div>
         <!-- 占位 -->
-        <span v-if="renderLyricLines.length === 1" class="lyric-line"> &nbsp; </span>
-      </n-flex>
+        <span v-if="renderLyricLines.length === 0" class="lyric-line" key="placeholder">
+          &nbsp;
+        </span>
+      </TransitionGroup>
     </div>
   </n-config-provider>
 </template>
 
 <script setup lang="ts">
 import { LyricLine, LyricWord } from "@applemusic-like-lyrics/lyric";
+import { calculateLyricIndex } from "@/utils/calc";
 import { LyricConfig, LyricData, RenderLine } from "@/types/desktop-lyric";
 import defaultDesktopLyricConfig from "@/assets/data/lyricConfig";
+
+const FALLBACK_INITIALIZATION_TIMEOUT = 2000; // 歌词窗口初始化后备超时时间，用于防止无数据时无限期空白
 
 // 桌面歌词数据
 const lyricData = reactive<LyricData>({
@@ -174,25 +194,16 @@ const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
   }
 });
 
+// 300ms 提前量，用于补偿动画和感知延迟
+const LYRIC_LOOKAHEAD = 300;
+
 // 实时歌词索引
 const currentLyricIndex = computed(() => {
-  if (
-    (lyricConfig.showYrc && lyricData?.yrcData?.length) ||
-    (!lyricData?.yrcData?.length && lyricData?.lrcData?.length)
-  ) {
-    return lyricData.lyricIndex ?? -1;
-  }
-  // 自行计算
-  if (!lyricData.lrcData?.length) return -1;
-  let idx = -1;
-  for (let i = 0; i < lyricData.lrcData.length; i++) {
-    const line = lyricData.lrcData[i];
-    if (playSeekMs.value >= Number(line.startTime) && playSeekMs.value <= Number(line.endTime)) {
-      idx = i;
-      break;
-    }
-  }
-  return idx;
+  const lyrics =
+    lyricConfig.showYrc && lyricData?.yrcData?.length ? lyricData.yrcData : lyricData.lrcData;
+  // 边界检查
+  if (!lyrics || !lyrics.length) return -1;
+  return calculateLyricIndex(playSeekMs.value, lyrics, 0, 2);
 });
 
 // 桌面歌词配置
@@ -273,10 +284,33 @@ const placeholder = (word: string): RenderLine[] => [
 ];
 
 /**
+ * 渲染的歌词行 transition name
+ */
+const transitionName = computed(() => {
+  if (!lyricConfig.animation) return "";
+  return "lyric-slide";
+});
+
+/**
+ * 根据索引计算 absolute top
+ */
+const getLineTop = (index: number) => {
+  // 统一使用 px 单位，避免因字体大小不同导致的 em 计算差异
+  // 1.9 倍行距，折中方案
+  if (index === 0) return "0px";
+  return `${lyricConfig.fontSize * 1.9}px`;
+};
+
+/**
  * 渲染的歌词行
  * @returns 渲染的歌词行数组
  */
 const renderLyricLines = computed<RenderLine[]>(() => {
+  // 在初始化阶段，不渲染任何内容
+  if (isInitializing.value) {
+    return [];
+  }
+
   const lyrics =
     lyricConfig.showYrc && lyricData?.yrcData?.length ? lyricData.yrcData : lyricData.lrcData;
   // 无歌曲名且无歌词
@@ -298,13 +332,11 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   const next = lyrics[idx + 1];
   if (!current) return [];
   const safeEnd = getSafeEndTime(lyrics, idx);
-  if (
-    lyricConfig.showTran &&
-    current.translatedLyric &&
-    current.translatedLyric.trim().length > 0
-  ) {
+  // 翻译模式：显示 原文 + 翻译
+  if (lyricConfig.showTran && current.translatedLyric) {
+    // 使用稳定的 Key，避免 update 时重建
     const lines: RenderLine[] = [
-      { line: { ...current, endTime: safeEnd }, index: idx, key: `${idx}:orig`, active: true },
+      { line: { ...current, endTime: safeEnd }, index: idx, key: `${idx}-orig`, active: true },
       {
         line: {
           startTime: current.startTime,
@@ -323,54 +355,35 @@ const renderLyricLines = computed<RenderLine[]>(() => {
           isDuet: false,
         },
         index: idx,
-        key: `${idx}:tran`,
+        key: `${idx}-tran`,
         active: false,
       },
     ];
-    return lines.filter((l) => {
-      const s = (l.line?.words || [])
-        .map((w) => w.word)
-        .join("")
-        .trim();
-      return s.length > 0;
-    });
+    return lines;
   }
-  if (!lyricConfig.isDoubleLine) {
-    return [
-      { line: { ...current, endTime: safeEnd }, index: idx, key: `${idx}:orig`, active: true },
-    ].filter((l) => {
-      const s = (l.line?.words || [])
-        .map((w) => w.word)
-        .join("")
-        .trim();
-      return s.length > 0;
+  // 双行模式：显示 当前 + 下一句
+  if (lyricConfig.isDoubleLine) {
+    const lines: RenderLine[] = [];
+    // 当前行
+    lines.push({
+      line: { ...current, endTime: safeEnd },
+      index: idx,
+      key: `${idx}-orig`,
+      active: true,
     });
+    // 下一句
+    if (next) {
+      lines.push({
+        line: next,
+        index: idx + 1,
+        key: `${idx + 1}-orig`, // 保持 Key 唯一且稳定
+        active: false,
+      });
+    }
+    return lines;
   }
-  const isEven = idx % 2 === 0;
-  if (isEven) {
-    const lines: RenderLine[] = [
-      { line: { ...current, endTime: safeEnd }, index: idx, key: `${idx}:orig`, active: true },
-      ...(next ? [{ line: next, index: idx + 1, key: `${idx + 1}:next`, active: false }] : []),
-    ];
-    return lines.filter((l) => {
-      const s = (l.line?.words || [])
-        .map((w) => w.word)
-        .join("")
-        .trim();
-      return s.length > 0;
-    });
-  }
-  const lines: RenderLine[] = [
-    ...(next ? [{ line: next, index: idx + 1, key: `${idx + 1}:next`, active: false }] : []),
-    { line: { ...current, endTime: safeEnd }, index: idx, key: `${idx}:orig`, active: true },
-  ];
-  return lines.filter((l) => {
-    const s = (l.line?.words || [])
-      .map((w) => w.word)
-      .join("")
-      .trim();
-    return s.length > 0;
-  });
+  // 单行模式
+  return [{ line: { ...current, endTime: safeEnd }, index: idx, key: `${idx}-orig`, active: true }];
 });
 
 /**
@@ -381,7 +394,8 @@ const renderLyricLines = computed<RenderLine[]>(() => {
 const getYrcStyle = (wordData: LyricWord, lyricIndex: number) => {
   const currentLine = lyricData.yrcData?.[lyricIndex];
   if (!currentLine) return { backgroundPositionX: "100%" };
-  const seekSec = playSeekMs.value;
+  // 应用提前量，使动画也能提前到位
+  const seekSec = playSeekMs.value + LYRIC_LOOKAHEAD;
   const startSec = currentLine.startTime || 0;
   const endSec = currentLine.endTime || 0;
   const isLineActive =
@@ -412,8 +426,8 @@ const setContentRef = (el: Element | ComponentPublicInstance | null, key: string
   if (el) contentRefs.set(key, el as HTMLElement);
   else contentRefs.delete(key);
 };
-/** 滚动开始进度：从进度 0.5 开始，剩余时间内滚至末尾 */
-const scrollStartAtProgress = 0.5;
+/** 滚动开始进度：从进度 0.3 开始，剩余时间内滚至末尾 */
+const scrollStartAtProgress = 0.3;
 
 /**
  * 歌词滚动样式计算
@@ -435,8 +449,8 @@ const getScrollStyle = (line: RenderLine) => {
   // 计算进度：毫秒锚点插值（`playSeekMs`），并以当前行的 `time` 与有效 `endTime` 计算区间
   const seekSec = playSeekMs.value;
   const start = Number(line.line.startTime ?? 0);
-  // 仅在滚动计算中提前 1 秒
-  const END_MARGIN_SEC = 1;
+  // 仅在滚动计算中提前 2 秒
+  const END_MARGIN_SEC = 2;
   const endRaw = Number(line.line.endTime);
   // 若 endTime 仍为 0 或不大于 start，视为无时长：不滚动
   const hasSafeEnd = Number.isFinite(endRaw) && endRaw > 0 && endRaw > start;
@@ -714,6 +728,10 @@ onMounted(() => {
     "update-desktop-lyric-data",
     (_event, data: LyricData & { sendTimestamp?: number }) => {
       Object.assign(lyricData, data);
+      // 首次接收到歌词数据时，立即结束初始化状态
+      if (isInitializing.value) {
+        isInitializing.value = false;
+      }
       // 更新锚点：以传入的 currentTime + songOffset 建立毫秒级基准，并重置帧时间
       if (typeof lyricData.currentTime === "number") {
         const offset = Number(lyricData.songOffset ?? 0);
@@ -763,10 +781,12 @@ onMounted(() => {
   // 初始化缓存边界数据
   updateCachedBounds();
 
-  // 延迟结束初始化状态
+  // 后备超时结束初始化状态：如果 IPC 事件未触发，则在超时后结束初始化
   useTimeoutFn(() => {
-    isInitializing.value = false;
-  }, 500);
+    if (isInitializing.value) {
+      isInitializing.value = false;
+    }
+  }, FALLBACK_INITIALIZATION_TIMEOUT);
 
   // 启动 RAF 插值
   if (lyricData.playStatus) {
@@ -924,14 +944,26 @@ onBeforeUnmount(() => {
     height: 100%;
     padding: 0 8px;
     cursor: move;
+    position: relative; // 相对定位，供子元素绝对定位参考
+
     .lyric-line {
+      position: absolute; // 绝对定位
       width: 100%;
+      left: 0;
       line-height: normal;
       padding: 4px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      position: relative;
+      transition:
+        top 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+        font-size 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+        color 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+        opacity 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+        transform 0.6s cubic-bezier(0.55, 0, 0.1, 1);
+      will-change: top, font-size, transform;
+      transform-origin: left center;
+
       &.has-background-mask {
         .scroll-content {
           background-color: var(--mask-bg-color);
@@ -978,9 +1010,9 @@ onBeforeUnmount(() => {
       }
     }
     &.center {
-      align-items: center;
       .lyric-line {
         text-align: center;
+        transform-origin: center center;
         &.is-yrc {
           .content {
             justify-content: center;
@@ -989,9 +1021,9 @@ onBeforeUnmount(() => {
       }
     }
     &.right {
-      align-items: flex-end;
       .lyric-line {
         text-align: right;
+        transform-origin: right center;
         &.is-yrc {
           .content {
             justify-content: flex-end;
@@ -1001,16 +1033,46 @@ onBeforeUnmount(() => {
     }
     &.both {
       .lyric-line {
-        &:nth-child(2n) {
+        &.align-right {
           text-align: right;
+          transform-origin: right center;
+        }
+        &.align-left {
+          text-align: left;
+          transform-origin: left center;
         }
       }
-      .lyric-line.is-yrc:nth-child(2n) {
+      .lyric-line.is-yrc.align-right {
         .content {
           justify-content: flex-end;
         }
       }
     }
+  }
+  &.no-animation {
+    .lyric-line {
+      transition: none !important;
+    }
+  }
+  // Slide Mode
+  .lyric-slide-move,
+  .lyric-slide-enter-active,
+  .lyric-slide-leave-active {
+    transition:
+      transform 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+      opacity 0.6s cubic-bezier(0.55, 0, 0.1, 1);
+    will-change: transform, opacity;
+  }
+  .lyric-slide-enter-from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  .lyric-slide-leave-to {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  .lyric-slide-leave-active {
+    position: absolute;
   }
   &.hovered {
     &:not(.locked) {

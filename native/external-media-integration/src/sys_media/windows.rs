@@ -1,64 +1,27 @@
-use std::sync::{
-    Arc,
-    LazyLock,
-    Mutex,
-};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use anyhow::Result;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
-use tokio::{
-    runtime::Runtime,
-    task::JoinHandle,
-};
-use tracing::{
-    debug,
-    error,
-    info,
-    instrument,
-    warn,
-};
+use tokio::{runtime::Runtime, task::JoinHandle};
+use tracing::{debug, error, info, instrument, warn};
 use windows::{
-    Foundation::{
-        TimeSpan,
-        TypedEventHandler,
-    },
+    Foundation::{TimeSpan, TypedEventHandler},
     Media::{
-        MediaPlaybackAutoRepeatMode,
-        MediaPlaybackStatus,
-        MediaPlaybackType,
-        Playback::MediaPlayer,
-        PlaybackPositionChangeRequestedEventArgs,
-        SystemMediaTransportControls,
-        SystemMediaTransportControlsButton,
-        SystemMediaTransportControlsButtonPressedEventArgs,
+        MediaPlaybackAutoRepeatMode, MediaPlaybackStatus, MediaPlaybackType, Playback::MediaPlayer,
+        PlaybackPositionChangeRequestedEventArgs, SystemMediaTransportControls,
+        SystemMediaTransportControlsButton, SystemMediaTransportControlsButtonPressedEventArgs,
         SystemMediaTransportControlsTimelineProperties,
     },
-    Storage::Streams::{
-        DataWriter,
-        InMemoryRandomAccessStream,
-        RandomAccessStreamReference,
-    },
-    core::{
-        HSTRING,
-        Ref,
-    },
+    Storage::Streams::{DataWriter, InMemoryRandomAccessStream, RandomAccessStreamReference},
+    core::{HSTRING, Ref},
 };
 
 use crate::{
     model::{
-        MetadataPayload,
-        PlayModePayload,
-        PlayStatePayload,
-        PlaybackStatus,
-        RepeatMode,
-        SystemMediaEvent,
-        SystemMediaEventType,
-        TimelinePayload,
+        MetadataPayload, PlayModePayload, PlayStatePayload, PlaybackStatus, RepeatMode,
+        SystemMediaEvent, SystemMediaEventType, TimelinePayload,
     },
-    sys_media::{
-        SystemMediaControls,
-        SystemMediaThreadsafeFunction,
-    },
+    sys_media::{SystemMediaControls, SystemMediaThreadsafeFunction},
 };
 
 const HNS_PER_MILLISECOND: f64 = 10_000.0;

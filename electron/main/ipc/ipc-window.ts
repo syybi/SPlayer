@@ -1,4 +1,4 @@
-import { app, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { useStore } from "../store";
 import { isDev } from "../utils/config";
 import { initThumbar } from "../thumbar";
@@ -32,9 +32,11 @@ const initWindowsIpc = (): void => {
     const loadWin = loadWindow.getWin();
     const mainWin = mainWindow.getWin();
     if (loadWin && !loadWin.isDestroyed()) loadWin.destroy();
-    const isMaximized = store.get("window")?.maximized;
-    if (isMaximized) mainWin?.maximize();
+    const { maximized, zoomFactor } = store.get("window");
+    if (maximized) mainWin?.maximize();
     if (!mainWin) return;
+    // 应用缩放
+    if (zoomFactor) mainWin.webContents.setZoomFactor(zoomFactor);
     mainWin?.show();
     mainWin?.focus();
     if (!isFirstLaunch) {
@@ -61,48 +63,69 @@ const initWindowsIpc = (): void => {
     }
   });
 
+  // 设置缩放系数
+  ipcMain.handle("set-zoom-factor", (event, factor: number) => {
+    // 获取窗口
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    // 限制范围 0.5 - 2.0
+    const safeFactor = Math.max(0.5, Math.min(2.0, factor));
+    win.webContents.setZoomFactor(safeFactor);
+    // 保存到 store
+    const windowConfig = store.get("window") || {};
+    store.set("window", { ...windowConfig, zoomFactor: safeFactor });
+    return true;
+  });
+
+  // 获取缩放系数
+  ipcMain.handle("get-zoom-factor", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return 1.0;
+    return win.webContents.getZoomFactor();
+  });
+
   // 最小化
   ipcMain.on("win-min", (event) => {
-    const mainWin = mainWindow.getWin();
-    if (!mainWin) return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
     event.preventDefault();
-    mainWin?.minimize();
+    win.minimize();
   });
 
   // 最大化
-  ipcMain.on("win-max", () => {
-    const mainWin = mainWindow.getWin();
-    if (!mainWin) return;
-    mainWin?.maximize();
+  ipcMain.on("win-max", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    win.maximize();
   });
 
   // 还原
-  ipcMain.on("win-restore", () => {
-    const mainWin = mainWindow.getWin();
-    if (!mainWin) return;
-    mainWin?.restore();
+  ipcMain.on("win-restore", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    win.restore();
   });
 
   // 隐藏
-  ipcMain.on("win-hide", () => {
-    const mainWin = mainWindow.getWin();
-    if (!mainWin) return;
-    mainWin?.hide();
+  ipcMain.on("win-hide", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    win.hide();
   });
 
   // 显示
-  ipcMain.on("win-show", () => {
-    const mainWin = mainWindow.getWin();
-    if (!mainWin) return;
-    mainWin?.show();
-    mainWin?.focus();
+  ipcMain.on("win-show", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    win.show();
+    win.focus();
   });
 
   // 重载
-  ipcMain.on("win-reload", () => {
-    const mainWin = mainWindow.getWin();
-    if (!mainWin) return;
-    mainWin.reload();
+  ipcMain.on("win-reload", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    win.reload();
   });
 
   // 重启
@@ -130,7 +153,7 @@ const initWindowsIpc = (): void => {
     if (currentProgress < 0) {
       mainWin.setProgressBar(-1);
     } else {
-      mainWin.setProgressBar(currentProgress, { mode: currentMode as any });
+      mainWin.setProgressBar(currentProgress, { mode: currentMode });
     }
   };
 

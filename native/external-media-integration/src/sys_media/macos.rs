@@ -1,71 +1,34 @@
 use std::{
     ptr::NonNull,
-    sync::{
-        Arc,
-        Mutex,
-    },
+    sync::{Arc, Mutex},
 };
 
 use anyhow::Result;
 use block2::RcBlock;
 use objc2::{
-    AnyThread,
-    Message,
+    AnyThread, Message,
     rc::Retained,
-    runtime::{
-        AnyObject,
-        ProtocolObject,
-    },
+    runtime::{AnyObject, ProtocolObject},
 };
 use objc2_app_kit::NSImage;
-use objc2_foundation::{
-    NSData,
-    NSMutableDictionary,
-    NSNumber,
-    NSSize,
-    NSString,
-};
+use objc2_foundation::{NSData, NSMutableDictionary, NSNumber, NSSize, NSString};
 use objc2_media_player::{
-    MPChangePlaybackPositionCommandEvent,
-    MPChangeRepeatModeCommandEvent,
-    MPChangeShuffleModeCommandEvent,
-    MPMediaItemArtwork,
-    MPMediaItemPropertyAlbumTitle,
-    MPMediaItemPropertyArtist,
-    MPMediaItemPropertyArtwork,
-    MPMediaItemPropertyPersistentID,
-    MPMediaItemPropertyPlaybackDuration,
-    MPMediaItemPropertyTitle,
-    MPNowPlayingInfoCenter,
-    MPNowPlayingInfoPropertyElapsedPlaybackTime,
-    MPNowPlayingPlaybackState,
-    MPRemoteCommand,
-    MPRemoteCommandCenter,
-    MPRemoteCommandEvent,
-    MPRemoteCommandHandlerStatus,
-    MPRepeatType,
+    MPChangePlaybackPositionCommandEvent, MPChangeRepeatModeCommandEvent,
+    MPChangeShuffleModeCommandEvent, MPMediaItemArtwork, MPMediaItemPropertyAlbumTitle,
+    MPMediaItemPropertyArtist, MPMediaItemPropertyArtwork, MPMediaItemPropertyPersistentID,
+    MPMediaItemPropertyPlaybackDuration, MPMediaItemPropertyTitle, MPNowPlayingInfoCenter,
+    MPNowPlayingInfoPropertyElapsedPlaybackTime, MPNowPlayingPlaybackState, MPRemoteCommand,
+    MPRemoteCommandCenter, MPRemoteCommandEvent, MPRemoteCommandHandlerStatus, MPRepeatType,
     MPShuffleType,
 };
-use tracing::{
-    debug,
-    error,
-    trace,
-};
+use tracing::{debug, error, trace};
 
 use crate::{
     model::{
-        MetadataPayload,
-        PlayModePayload,
-        PlayStatePayload,
-        PlaybackStatus,
-        SystemMediaEvent,
-        SystemMediaEventType,
-        TimelinePayload,
+        MetadataPayload, PlayModePayload, PlayStatePayload, PlaybackStatus, SystemMediaEvent,
+        SystemMediaEventType, TimelinePayload,
     },
-    sys_media::{
-        SystemMediaControls,
-        SystemMediaThreadsafeFunction,
-    },
+    sys_media::{SystemMediaControls, SystemMediaThreadsafeFunction},
 };
 
 pub struct MacosImpl {

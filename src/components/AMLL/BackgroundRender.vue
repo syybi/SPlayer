@@ -84,25 +84,32 @@ onMounted(() => {
     const el = bgRenderRef.value.getElement();
     el.style.width = "100%";
     el.style.height = "100%";
-    el.style.display = "block"; // 防止行内元素产生间隙
-    // 挂载到 DOM
+    el.style.display = "block";
     wrapperRef.value.appendChild(el);
-    // 初始化时立即应用一次当前的 Props 状态
-    // 注意：某些 setter 可能依赖已创建的实例，所以放在 mounted 中较安全
     updateRendererState();
   }
 });
 
-const { start: delayedDispose } = useTimeoutFn(() => {
-  if (bgRenderRef.value) {
-    bgRenderRef.value.dispose();
-    bgRenderRef.value = undefined;
-  }
-}, 500, { immediate: false });
+let disposeTimer: ReturnType<typeof setTimeout> | null = null;
 
 onBeforeUnmount(() => {
-  bgRenderRef.value?.pause();
-  delayedDispose();
+  const renderer = bgRenderRef.value;
+  if (renderer) {
+    renderer.pause();
+    bgRenderRef.value = undefined;
+    // 延迟销毁
+    disposeTimer = setTimeout(() => {
+      renderer.dispose();
+      disposeTimer = null;
+    }, 500);
+  }
+});
+
+onUnmounted(() => {
+  if (disposeTimer) {
+    clearTimeout(disposeTimer);
+    disposeTimer = null;
+  }
 });
 
 watch(

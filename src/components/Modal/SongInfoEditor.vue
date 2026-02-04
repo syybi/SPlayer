@@ -214,7 +214,8 @@ const getSongInfo = async () => {
   // 获取封面
   const coverBuff = common.picture?.[0]?.data || "";
   const coverType = common.picture?.[0]?.format || "";
-  if (coverBuff) coverData.value = blobURLManager.createBlobURL(coverBuff as Buffer, coverType, path);
+  if (coverBuff)
+    coverData.value = blobURLManager.createBlobURL(coverBuff as Buffer, coverType, path);
 };
 
 // 在线匹配

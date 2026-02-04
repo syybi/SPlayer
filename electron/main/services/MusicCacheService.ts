@@ -1,9 +1,12 @@
-import { existsSync, createWriteStream } from "fs";
-import { unlink, rename, stat } from "fs/promises";
-import { pipeline } from "stream/promises";
-import { CacheService } from "./CacheService";
+import { existsSync } from "fs";
+import { rename, stat, unlink } from "fs/promises";
 import { cacheLog } from "../logger";
-import got from "got";
+import { useStore } from "../store";
+import { loadNativeModule } from "../utils/native-loader";
+import { CacheService } from "./CacheService";
+
+type toolModule = typeof import("@native/tools");
+const tools: toolModule = loadNativeModule("tools.node", "tools");
 
 export class MusicCacheService {
   private static instance: MusicCacheService;
@@ -83,12 +86,30 @@ export class MusicCacheService {
 
     // 下载并写入
     try {
-      const downloadStream = got.stream(url);
-      const fileStream = createWriteStream(tempPath);
+      if (!tools) {
+        throw new Error("Native tools not loaded");
+      }
 
-      await pipeline(downloadStream, fileStream);
+      // 使用 Rust 下载器
 
-      // 检查文件大小，避免空文件（stat 在文件不存在时会抛出错误）
+      const store = useStore();
+      const enableHttp2 = store.get("enableDownloadHttp2", true) as boolean;
+
+      const task = new tools.DownloadTask();
+      await task.download(
+        url,
+        tempPath,
+        null, // No metadata for cache
+        4, // Thread count
+        null, // Referer
+        () => {}, // No progress callback needed for cache currently
+        enableHttp2,
+      );
+
+      // 检查临时文件是否存在
+      if (!existsSync(tempPath)) throw new Error("下载失败：临时文件未创建");
+
+      // 检查文件大小，避免空文件
       const stats = await stat(tempPath);
       if (stats.size === 0) {
         await unlink(tempPath).catch(() => {});

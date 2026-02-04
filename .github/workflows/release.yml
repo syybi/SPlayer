@@ -44,6 +44,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
       # 清理旧的构建产物
       - name: Clean workspace on Windows
         if: runner.os == 'Windows'
@@ -64,6 +66,15 @@ jobs:
         run: |
           echo "🧹 Cleaning workspace, node_modules, and Electron caches..."
           rm -rf dist out node_modules ~/.cache/electron-builder ~/.cache/electron
+      # macOS 上安装 LLVM 以支持 Wasm 编译
+      - name: Install LLVM on macOS
+        if: runner.os == 'macOS'
+        run: brew install llvm
+      - name: Set Environment Variables on macOS
+        if: runner.os == 'macOS'
+        run: |
+          echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
+          echo "AR=$(brew --prefix llvm)/bin/llvm-ar" >> $GITHUB_ENV
       # 安装项目依赖
       - name: Install dependencies
         run: pnpm install

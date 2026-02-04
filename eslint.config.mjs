@@ -22,6 +22,7 @@ export default [
       "**/dist",
       "**/out",
       "**/.gitignore",
+      "**/docs",
       "**/auto-imports.d.ts",
       "**/components.d.ts",
     ],

@@ -55,6 +55,8 @@ export interface LyricConfig {
   backgroundMaskColor: string;
   /** 始终展示播放信息 */
   alwaysShowPlayInfo: boolean;
+  /** 是否开启歌词切换动画 */
+  animation: boolean;
 }
 
 /**

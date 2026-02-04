@@ -1,45 +1,20 @@
 use std::{
     sync::{
-        LazyLock,
-        Mutex,
-        mpsc::{
-            self,
-            Receiver,
-            Sender,
-        },
+        LazyLock, Mutex,
+        mpsc::{self, Receiver, Sender},
     },
     thread,
-    time::{
-        Duration,
-        SystemTime,
-        UNIX_EPOCH,
-    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use discord_rich_presence::{
-    DiscordIpc,
-    DiscordIpcClient,
-    activity::{
-        Activity,
-        ActivityType,
-        Assets,
-        Button,
-        StatusDisplayType,
-        Timestamps,
-    },
+    DiscordIpc, DiscordIpcClient,
+    activity::{Activity, ActivityType, Assets, Button, StatusDisplayType, Timestamps},
 };
-use tracing::{
-    debug,
-    info,
-    warn,
-};
+use tracing::{debug, info, warn};
 
 use crate::model::{
-    DiscordConfigPayload,
-    DiscordDisplayMode,
-    MetadataPayload,
-    PlayStatePayload,
-    PlaybackStatus,
+    DiscordConfigPayload, DiscordDisplayMode, MetadataPayload, PlayStatePayload, PlaybackStatus,
     TimelinePayload,
 };
 

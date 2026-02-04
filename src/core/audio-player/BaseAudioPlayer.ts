@@ -1,3 +1,4 @@
+import { TypedEventTarget } from "@/utils/TypedEventTarget";
 import { AudioEffectManager } from "./AudioEffectManager";
 import type { EngineCapabilities, IPlaybackEngine } from "./IPlaybackEngine";
 
@@ -19,6 +20,12 @@ export const AUDIO_EVENTS = {
   ERROR: "error",
   CAN_PLAY: "canplay",
   LOAD_START: "loadstart",
+  SEEKED: "seeked",
+  WAITING: "waiting",
+  VOLUME_CHANGE: "volumechange",
+  PLAYING: "playing",
+  SEEKING: "seeking",
+  EMPTIED: "emptied",
 } as const;
 
 export type AudioEventType = (typeof AUDIO_EVENTS)[keyof typeof AUDIO_EVENTS];
@@ -26,7 +33,7 @@ export type AudioEventType = (typeof AUDIO_EVENTS)[keyof typeof AUDIO_EVENTS];
 export type AudioEventMap = {
   [K in AudioEventType]: K extends typeof AUDIO_EVENTS.ERROR
     ? CustomEvent<AudioErrorDetail>
-    : Event;
+    : CustomEvent<undefined>;
 };
 
 export enum AudioErrorCode {
@@ -50,7 +57,10 @@ const SEEK_FADE_TIME = 0.05;
  * 管理 AudioContext、音量增益、EQ连接、以及通用的淡入淡出/Seek逻辑
  * 实现 IPlaybackEngine 接口
  */
-export abstract class BaseAudioPlayer extends EventTarget implements IPlaybackEngine {
+export abstract class BaseAudioPlayer
+  extends TypedEventTarget<AudioEventMap>
+  implements IPlaybackEngine
+{
   /** 核心上下文 */
   protected audioCtx: IExtendedAudioContext | null = null;
   /** 主输出增益节点 (控制音量) */
@@ -183,7 +193,7 @@ export abstract class BaseAudioPlayer extends EventTarget implements IPlaybackEn
     const duration = options.fadeOut ? (options.fadeDuration ?? 0.5) : 0;
 
     const performPause = async () => {
-      this.doPause();
+      await this.doPause();
 
       if (this.audioCtx && this.audioCtx.state === "running") {
         try {
@@ -211,17 +221,26 @@ export abstract class BaseAudioPlayer extends EventTarget implements IPlaybackEn
    * 跳转进度
    * @param time 目标时间 (秒)
    */
-  public async seek(time: number) {
+  public async seek(time: number, immediate = false) {
     this.cancelPendingPause();
     // 如果已经暂停，直接跳转
     if (this.paused) {
       this.doSeek(time);
       return;
     }
-    this.applyFadeTo(0, SEEK_FADE_TIME);
-    await new Promise((resolve) => setTimeout(resolve, SEEK_FADE_TIME * 1000));
-    this.doSeek(time);
-    this.applyFadeTo(this.volume, SEEK_FADE_TIME);
+
+    if (!immediate) {
+      this.applyFadeTo(0, SEEK_FADE_TIME);
+      await new Promise((resolve) => setTimeout(resolve, SEEK_FADE_TIME * 1000));
+    }
+
+    await this.doSeek(time);
+
+    if (!immediate) {
+      this.applyFadeTo(this.volume, SEEK_FADE_TIME);
+    } else {
+      this.applyFadeTo(this.volume, 0);
+    }
   }
 
   /**
@@ -229,8 +248,9 @@ export abstract class BaseAudioPlayer extends EventTarget implements IPlaybackEn
    */
   public stop() {
     this.cancelPendingPause();
-    this.pause({ fadeOut: false });
-    this.doSeek(0);
+    // 捕获可能产生的异步错误
+    Promise.resolve(this.pause({ fadeOut: false })).catch(() => {});
+    Promise.resolve(this.doSeek(0)).catch(() => {});
   }
 
   /**
@@ -340,10 +360,10 @@ export abstract class BaseAudioPlayer extends EventTarget implements IPlaybackEn
   protected abstract doPlay(): Promise<void>;
 
   /** 执行底层暂停 */
-  protected abstract doPause(): void;
+  protected abstract doPause(): void | Promise<void>;
 
   /** 执行底层 Seek */
-  protected abstract doSeek(time: number): void;
+  protected abstract doSeek(time: number): void | Promise<void>;
 
   /** 设置播放速率 */
   public abstract setRate(value: number): void;
@@ -359,47 +379,4 @@ export abstract class BaseAudioPlayer extends EventTarget implements IPlaybackEn
   public abstract get currentTime(): number;
   public abstract get paused(): boolean;
   public abstract getErrorCode(): number;
-
-  /**
-   * 触发事件
-   * @param type 事件类型
-   * @param detail 事件详情
-   */
-  protected emit(type: Exclude<AudioEventType, "error">): void;
-  protected emit(type: typeof AUDIO_EVENTS.ERROR, detail: AudioErrorDetail): void;
-  protected emit(type: AudioEventType, detail?: AudioErrorDetail): void {
-    if (type === AUDIO_EVENTS.ERROR && detail) {
-      this.dispatchEvent(new CustomEvent(type, { detail }));
-    } else {
-      this.dispatchEvent(new Event(type));
-    }
-  }
-
-  /**
-   * 添加事件监听
-   * @param type 事件类型
-   * @param listener 事件监听器
-   * @param options 事件选项
-   */
-  public override addEventListener<K extends keyof AudioEventMap>(
-    type: K,
-    listener: (this: BaseAudioPlayer, ev: AudioEventMap[K]) => unknown,
-    options?: boolean | AddEventListenerOptions,
-  ): void {
-    super.addEventListener(type, listener as EventListenerOrEventListenerObject, options);
-  }
-
-  /**
-   * 移除事件监听
-   * @param type 事件类型
-   * @param listener 事件监听器
-   * @param options 事件选项
-   */
-  public override removeEventListener<K extends keyof AudioEventMap>(
-    type: K,
-    listener: (this: BaseAudioPlayer, ev: AudioEventMap[K]) => unknown,
-    options?: boolean | EventListenerOptions,
-  ): void {
-    super.removeEventListener(type, listener as EventListenerOrEventListenerObject, options);
-  }
 }

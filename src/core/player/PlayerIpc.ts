@@ -1,8 +1,10 @@
 import { useSettingStore } from "@/stores/setting";
-import { PlayModePayload, RepeatModeType, ShuffleModeType } from "@/types/shared";
+import { SongLyric } from "@/types/lyric";
+import type { PlayModePayload, RepeatModeType, ShuffleModeType } from "@/types/shared";
 import { isElectron } from "@/utils/env";
 import { getPlaySongData } from "@/utils/format";
-import { DiscordConfigPayload, MetadataParam, PlaybackStatus, RepeatMode } from "@emi";
+import type { LyricLine } from "@applemusic-like-lyrics/lyric";
+import type { DiscordConfigPayload, MetadataParam, PlaybackStatus, RepeatMode } from "@emi";
 import { throttle } from "lodash-es";
 
 /**
@@ -95,6 +97,58 @@ export const sendLikeStatus = (isLiked: boolean) => {
  */
 export const toggleDesktopLyric = (show: boolean) => {
   if (isElectron) window.electron.ipcRenderer.send("toggle-desktop-lyric", show);
+};
+
+export const toggleTaskbarLyric = (show: boolean) => {
+  if (isElectron) window.electron.ipcRenderer.send("taskbar:toggle", show);
+};
+
+export interface TaskbarMetadataPayload {
+  title: string;
+  artist: string;
+  cover: string;
+}
+
+export const sendTaskbarMetadata = (payload: TaskbarMetadataPayload) => {
+  if (isElectron) window.electron.ipcRenderer.send("taskbar:update-metadata", payload);
+};
+
+export interface TaskbarLyricsPayload {
+  lines: LyricLine[];
+  type: "line" | "word";
+}
+
+/**
+ * 发送任务栏歌词
+ * @param lyrics 歌词数据
+ */
+export const sendTaskbarLyrics = (lyrics: SongLyric) => {
+  if (!isElectron) return;
+  // 处理结构
+  const taskbarLyrics = (lyrics.yrcData.length > 0 ? lyrics.yrcData : lyrics.lrcData) ?? [];
+  const payload: TaskbarLyricsPayload = {
+    lines: toRaw(taskbarLyrics),
+    type: lyrics.yrcData.length > 0 ? "word" : "line",
+  };
+  window.electron.ipcRenderer.send("taskbar:update-lyrics", payload);
+};
+
+export interface TaskbarProgressPayload {
+  currentTime: number;
+  duration: number;
+  offset: number;
+}
+
+export const sendTaskbarProgressData = (payload: TaskbarProgressPayload) => {
+  if (isElectron) window.electron.ipcRenderer.send("taskbar:update-progress", payload);
+};
+
+export interface TaskbarStatePayload {
+  isPlaying: boolean;
+}
+
+export const sendTaskbarState = (payload: TaskbarStatePayload) => {
+  if (isElectron) window.electron.ipcRenderer.send("taskbar:update-state", payload);
 };
 
 /**

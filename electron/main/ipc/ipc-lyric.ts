@@ -40,14 +40,14 @@ const initLyricIpc = (): void => {
     // 立即禁用 forward
     setLyricMouseEvents(false);
     // 防抖恢复：300ms 内无新事件则恢复
-    restoreTimer && clearTimeout(restoreTimer);
+    if (restoreTimer) clearTimeout(restoreTimer);
     restoreTimer = setTimeout(() => setLyricMouseEvents(true), 300);
   };
 
   // 主窗口移动/调整大小结束：立即恢复 forward（仅 Windows/macOS 支持）
   const onMoveOrResizeEnd = () => {
     if (!isLocked) return;
-    restoreTimer && clearTimeout(restoreTimer);
+    if (restoreTimer) clearTimeout(restoreTimer);
     setLyricMouseEvents(true);
   };
 
@@ -91,7 +91,7 @@ const initLyricIpc = (): void => {
     }
 
     // 清理定时器
-    restoreTimer && clearTimeout(restoreTimer);
+    if (restoreTimer) clearTimeout(restoreTimer);
     restoreTimer = null;
   };
 
@@ -137,7 +137,7 @@ const initLyricIpc = (): void => {
   // 更新歌词窗口配置
   ipcMain.on("update-desktop-lyric-option", (_, option, callback: boolean = false) => {
     const mainWin = mainWindow.getWin();
-    if (!option || !isWinAlive(lyricWin)) return;
+    if (!option) return;
     // 增量更新
     const prevOption = store.get("lyric.config");
     if (prevOption) {
@@ -193,7 +193,10 @@ const initLyricIpc = (): void => {
     if (!isWinAlive(lyricWin)) return;
     lyricWin.setBounds({ x, y, width, height });
     // 保存配置
-    store.set("lyric", { ...store.get("lyric"), x, y, width, height });
+    store.set("lyric.x", x);
+    store.set("lyric.y", y);
+    store.set("lyric.width", width);
+    store.set("lyric.height", height);
   });
 
   // 更新歌词窗口宽高
@@ -201,17 +204,17 @@ const initLyricIpc = (): void => {
     if (!isWinAlive(lyricWin)) return;
     // 更新窗口宽度
     lyricWin.setBounds({ width, height });
-    store.set("lyric", { ...store.get("lyric"), width, height });
+    store.set("lyric.width", width);
+    store.set("lyric.height", height);
   });
 
   // 更新高度
   ipcMain.on("update-window-height", (_, height) => {
     if (!isWinAlive(lyricWin)) return;
-    const store = useStore();
     const { width } = lyricWin.getBounds();
     // 更新窗口高度
     lyricWin.setBounds({ width, height });
-    store.set("lyric", { ...store.get("lyric"), height });
+    store.set("lyric.height", height);
   });
 
   // 是否固定当前最大宽高
@@ -256,23 +259,26 @@ const initLyricIpc = (): void => {
   // 锁定/解锁桌面歌词
   ipcMain.on("toggle-desktop-lyric-lock", (_, isLock: boolean, isTemp: boolean = false) => {
     const mainWin = mainWindow.getWin();
-    if (!isWinAlive(lyricWin) || !isWinAlive(mainWin)) return;
 
     // 更新锁定状态
     if (!isTemp) isLocked = isLock;
 
     // 设置鼠标事件穿透
-    if (isLock) {
-      lyricWin.setIgnoreMouseEvents(true, { forward: true });
-    } else {
-      lyricWin.setIgnoreMouseEvents(false);
+    if (isWinAlive(lyricWin)) {
+      if (isLock) {
+        lyricWin.setIgnoreMouseEvents(true, { forward: true });
+      } else {
+        lyricWin.setIgnoreMouseEvents(false);
+      }
     }
 
     if (isTemp) return;
-    store.set("lyric.config", { ...store.get("lyric.config"), isLock });
+    store.set("lyric.config.isLock", isLock);
     // 触发窗口更新
     const config = store.get("lyric.config");
-    mainWin?.webContents.send("update-desktop-lyric-option", config);
+    if (isWinAlive(mainWin)) {
+      mainWin.webContents.send("update-desktop-lyric-option", config);
+    }
   });
 };
 

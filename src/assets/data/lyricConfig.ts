@@ -16,6 +16,7 @@ const config: LyricConfig = {
   textBackgroundMask: false,
   backgroundMaskColor: "rgba(0, 0, 0, 0.5)",
   alwaysShowPlayInfo: false,
+  animation: true,
 };
 
 export default config;

@@ -16,8 +16,8 @@ declare global {
         has: (key: string) => Promise<boolean>;
         delete: (key: string) => Promise<boolean>;
         reset: (keys?: string[]) => Promise<boolean>;
-        export: (data: any) => Promise<boolean>;
-        import: () => Promise<any>;
+        export: (data: any) => Promise<{ success: boolean; path?: string; error?: string }>;
+        import: () => Promise<{ success: boolean; data?: any; error?: string }>;
       };
     };
   }

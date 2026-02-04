@@ -71,6 +71,8 @@ export default defineConfig(({ mode }) => {
           "@": resolve(__dirname, "src/"),
           "@emi": resolve(__dirname, "native/external-media-integration"),
           "@shared": resolve(__dirname, "src/types/shared.ts"),
+          "@opencc": resolve(__dirname, "native/ferrous-opencc-wasm/pkg"),
+          "@native": resolve(__dirname, "native"),
         },
       },
       css: {

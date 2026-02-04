@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
-import { existsSync } from "fs";
-import { readFile, rename } from "fs/promises";
+import { existsSync } from "node:fs";
+import { readFile, rename } from "node:fs/promises";
 
 /** 当前本地音乐库 DB 版本，用于控制缓存结构升级 */
 const CURRENT_DB_VERSION = 2;
@@ -140,7 +140,11 @@ export class LocalMusicDB {
 
     const transaction = this.db.transaction((tracks: MusicTrack[]) => {
       for (const track of tracks) {
-        insertStmt.run(track);
+        insertStmt.run({
+          ...track,
+          // rust 模块的 cover 是 option，需要特殊处理一下
+          cover: track.cover ?? null,
+        });
       }
     });
 

@@ -1,6 +1,7 @@
 <template>
   <n-scrollbar style="max-height: 70vh" class="custom-code">
-    <n-alert type="warning">
+    <n-alert type="error" title="高危操作警告">
+      在此处输入任意内容都可能会导致应用出现异常，包括但不限于界面错乱、功能异常、数据丢失等，请谨慎操作！<br />
       请勿输入来源不明或他人提供的代码！恶意代码可能窃取您的账号信息、泄露隐私数据，或导致应用崩溃等异常行为。
     </n-alert>
     <div class="code-section">

@@ -1,29 +1,13 @@
-use std::{
-    fs,
-    path::PathBuf,
-    sync::OnceLock,
-};
+use std::{fs, path::PathBuf, sync::OnceLock};
 
-use anyhow::{
-    Context,
-    Result,
-};
+use anyhow::{Context, Result};
 use time::macros::format_description;
-use tracing::{
-    error,
-    trace,
-};
-use tracing_appender::{
-    non_blocking::WorkerGuard,
-    rolling::RollingFileAppender,
-};
+use tracing::{error, trace};
+use tracing_appender::{non_blocking::WorkerGuard, rolling::RollingFileAppender};
 use tracing_subscriber::{
     Layer,
-    filter::LevelFilter,
-    fmt::{
-        self,
-        time::LocalTime,
-    },
+    filter::{LevelFilter, Targets},
+    fmt::{self, time::LocalTime},
     layer::SubscriberExt,
     util::SubscriberInitExt,
 };
@@ -55,19 +39,24 @@ pub fn init(log_dir_str: String) -> Result<()> {
     let time_format = format_description!("[hour]:[minute]:[second]");
     let local_timer = LocalTime::new(time_format);
 
+    let crate_name = env!("CARGO_PKG_NAME").replace('-', "_");
+    let file_filter = Targets::new().with_target(&crate_name, LevelFilter::TRACE);
+
+    let stdout_filter = Targets::new().with_target(&crate_name, LevelFilter::WARN);
+
     let file_layer = fmt::layer()
         .with_writer(non_blocking)
         .with_ansi(false)
         .with_target(true)
         .with_timer(local_timer.clone())
-        .with_filter(LevelFilter::TRACE);
+        .with_filter(file_filter);
 
     let stdout_layer = fmt::layer()
         .with_writer(std::io::stdout)
         .with_ansi(true)
         .pretty()
         .with_timer(local_timer)
-        .with_filter(LevelFilter::WARN);
+        .with_filter(stdout_filter);
 
     tracing_subscriber::registry()
         .with(file_layer)

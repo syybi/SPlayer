@@ -1,5 +1,6 @@
 {
   "name": "external-media-integration",
+  "main": "external-media-integration.node",
   "devDependencies": {
     "@napi-rs/cli": "^3.5.1"
   },
