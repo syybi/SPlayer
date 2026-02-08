@@ -255,11 +255,18 @@ export const openCreatePlaylist = async (isLocal: boolean = false) => {
   });
 };
 
-// 编辑歌单
+/**
+ * 编辑歌单
+ * @param id 歌单 id
+ * @param data 歌单信息
+ * @param func 回调函数
+ * @param isLocal 是否为本地歌单
+ */
 export const openUpdatePlaylist = async (
   id: number,
   data: CoverType,
   func: () => Promise<void>,
+  isLocal: boolean = false,
 ) => {
   const { default: UpdatePlaylist } = await import("@/components/Modal/UpdatePlaylist.vue");
   const modal = window.$modal.create({
@@ -267,11 +274,12 @@ export const openUpdatePlaylist = async (
     transformOrigin: "center",
     autoFocus: false,
     style: { width: "600px" },
-    title: "编辑歌单",
+    title: isLocal ? "编辑本地歌单" : "编辑歌单",
     content: () => {
       return h(UpdatePlaylist, {
         id,
         data,
+        isLocal,
         onSuccess: () => {
           modal.destroy();
           // 触发回调
@@ -479,8 +487,7 @@ export const openSidebarHideManager = async () => {
 
 /** 打开封面隐藏配置弹窗 */
 export const openCoverManager = async () => {
-  const { default: CoverManager } =
-    await import("@/components/Modal/Setting/CoverManager.vue");
+  const { default: CoverManager } = await import("@/components/Modal/Setting/CoverManager.vue");
   window.$modal.create({
     preset: "card",
     transformOrigin: "center",

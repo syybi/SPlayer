@@ -1,6 +1,7 @@
 import { type BrowserWindow } from "electron";
 import { updateLog } from "../logger";
 import electronUpdater from "electron-updater";
+import { isDev } from "../utils/config";
 
 // import
 const { autoUpdater } = electronUpdater;
@@ -60,14 +61,44 @@ const initUpdaterListeners = (win: BrowserWindow) => {
   isInit = true;
 };
 
+// 强制开发环境调试
+if (isDev) autoUpdater.forceDevUpdateConfig = true;
+
 // 检查更新
-export const checkUpdate = (win: BrowserWindow, showTip: boolean = false) => {
+export const checkUpdate = (
+  win: BrowserWindow,
+  showTip: boolean = false,
+  allowPrerelease: boolean = false,
+) => {
   // 初始化事件监听器
   initUpdaterListeners(win);
   // 更改提示
   isShowTip = showTip;
+  // 设置是否允许 Pre-release
+  autoUpdater.allowPrerelease = allowPrerelease;
   // 检查更新
-  autoUpdater.checkForUpdates();
+  autoUpdater
+    .checkForUpdates()
+    .then((res) => {
+      // 如果返回 null (例如在开发环境且未配置 dev-app-update.yml 时可能发生，或者被跳过)
+      // 则手动发送 update-not-available 以结束前端 loading
+      if (!res) {
+        if (isShowTip) {
+          win.webContents.send("update-not-available", {
+            version: "0.0.0",
+            files: [],
+            path: "",
+            sha512: "",
+            releaseDate: "",
+          });
+        }
+        updateLog.info("Update check skipped or no update info returned.");
+      }
+    })
+    .catch((err) => {
+      updateLog.error(`Check update error: ${err}`);
+      win.webContents.send("update-error", err);
+    });
 };
 
 // 开始下载

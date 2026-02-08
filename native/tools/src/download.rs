@@ -38,7 +38,7 @@ where
     where
         C: std::fmt::Display,
     {
-        self.map_err(|e| Error::from_reason(format!("{}: {}", context, e)))
+        self.map_err(|e| Error::from_reason(format!("{context}: {e}")))
     }
 }
 
@@ -127,9 +127,19 @@ pub struct SongMetadata {
     pub cover_url: Option<String>,
     pub lyric: Option<String>,
     pub description: Option<String>,
+    pub album_artist: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<u32>,
+    pub track_number: Option<u32>,
+    pub disc_number: Option<u32>,
 }
 
 #[napi]
+#[allow(
+    clippy::trailing_empty_array,
+    clippy::missing_errors_doc,
+    clippy::option_if_let_else
+)]
 pub async fn write_music_metadata(
     file_path: String,
     metadata: SongMetadata,
@@ -164,13 +174,23 @@ impl DownloadTask {
             token: CancellationToken::new(),
         }
     }
+}
 
+impl Default for DownloadTask {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[napi]
+impl DownloadTask {
     #[napi]
     pub fn cancel(&self) {
         self.token.cancel();
     }
 
     #[napi]
+    #[allow(clippy::too_many_arguments, clippy::missing_errors_doc)]
     pub async fn download(
         &self,
         url: String,
@@ -191,13 +211,10 @@ impl DownloadTask {
         let (total_size, http_version) =
             detect_content_length(&client, &url, referer.as_deref()).await;
 
-        println!(
-            "[Download] URL: {}, Version: {:?}, Size: {}",
-            url, http_version, total_size
-        );
+        println!("[Download] URL: {url}, Version: {http_version:?}, Size: {total_size}");
 
         if total_size > 0 {
-            println!("[Download] Threads: {}", thread_count);
+            println!("[Download] Threads: {thread_count}");
             download_range_stream(
                 self.token.clone(),
                 client.clone(),
@@ -241,9 +258,7 @@ fn build_client(enable_http2: bool) -> Result<reqwest::Client> {
         builder = builder.http1_only();
     }
 
-    builder
-        .build()
-        .context("Failed to build HTTP client")
+    builder.build().context("Failed to build HTTP client")
 }
 
 async fn detect_content_length(
@@ -321,7 +336,7 @@ async fn download_simple_stream(
 
     let process_result = async {
         while let Some(item) = tokio::select! {
-            _ = token.cancelled() => None,
+            () = token.cancelled() => None,
             item = stream.next() => item,
         } {
             let chunk = item.context("Read error")?;
@@ -330,7 +345,10 @@ async fn download_simple_stream(
         }
 
         if token.is_cancelled() {
-            return Err(Error::new(Status::Cancelled, "Download cancelled".to_string()));
+            return Err(Error::new(
+                Status::Cancelled,
+                "Download cancelled".to_string(),
+            ));
         }
 
         file.flush().await.context("Flush failed")?;
@@ -348,6 +366,7 @@ async fn download_simple_stream(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn download_range_stream(
     token: CancellationToken,
     client: reqwest::Client,
@@ -390,7 +409,10 @@ async fn download_range_stream(
         while let Some(result) = stream.next().await {
             let (offset, data) = result?;
             if token.is_cancelled() {
-                return Err(Error::new(Status::Cancelled, "Download cancelled".to_string()));
+                return Err(Error::new(
+                    Status::Cancelled,
+                    "Download cancelled".to_string(),
+                ));
             }
 
             file.seek(SeekFrom::Start(offset))
@@ -407,7 +429,7 @@ async fn download_range_stream(
     if let Err(e) = process_result {
         drop(file);
         let _ = tokio::fs::remove_file(&file_path).await;
-        return Err(Error::from_reason(format!("Range download failed: {}", e)));
+        return Err(Error::from_reason(format!("Range download failed: {e}")));
     }
 
     tracker.finish();
@@ -427,10 +449,13 @@ async fn download_chunk_with_retry(
 
     while attempts < MAX_RETRIES {
         if token.is_cancelled() {
-            return Err(Error::new(Status::Cancelled, "Download cancelled".to_string()));
+            return Err(Error::new(
+                Status::Cancelled,
+                "Download cancelled".to_string(),
+            ));
         }
 
-        let range_header = format!("bytes={}-{}", start, end);
+        let range_header = format!("bytes={start}-{end}");
         let mut req = client.get(&url).header("Range", &range_header);
         if let Some(ref r) = referer {
             req = req.header("Referer", r);
@@ -448,7 +473,7 @@ async fn download_chunk_with_retry(
                 match resp.bytes().await {
                     Ok(bytes) => return Ok((start, bytes)),
                     Err(e) => {
-                        last_error = format!("Read bytes failed: {}", e);
+                        last_error = format!("Read bytes failed: {e}");
                     }
                 }
             }
@@ -461,8 +486,7 @@ async fn download_chunk_with_retry(
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
     Err(Error::from_reason(format!(
-        "Chunk {}-{} failed after {} retries. Last error: {}",
-        start, end, MAX_RETRIES, last_error
+        "Chunk {start}-{end} failed after {MAX_RETRIES} retries. Last error: {last_error}"
     )))
 }
 
@@ -531,6 +555,26 @@ fn write_metadata(path: &str, meta: SongMetadata, cover_data: Option<bytes::Byte
     tag.set_title(meta.title);
     tag.set_artist(meta.artist);
     tag.set_album(meta.album);
+
+    if let Some(album_artist) = meta.album_artist {
+        tag.insert_text(ItemKey::AlbumArtist, album_artist);
+    }
+
+    if let Some(genre) = meta.genre {
+        tag.set_genre(genre);
+    }
+
+    if let Some(year) = meta.year {
+        tag.set_year(year);
+    }
+
+    if let Some(track) = meta.track_number {
+        tag.set_track(track);
+    }
+
+    if let Some(disc) = meta.disc_number {
+        tag.set_disk(disc);
+    }
 
     if let Some(desc) = meta.description {
         tag.set_comment(desc);

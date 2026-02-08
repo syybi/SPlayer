@@ -1,0 +1,216 @@
+name: Weekly Nightly Build
+
+on:
+  schedule:
+    - cron: "0 10 * * 5" # 每周五 18:00 (UTC+8)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Check for changes since last nightly tag
+        id: check
+        run: |
+          LATEST_TAG="nightly"
+          # 检查 tag 是否存在
+          if git rev-parse "$LATEST_TAG" >/dev/null 2>&1; then
+            # 检查是否有新提交
+            CHANGED=$(git log "$LATEST_TAG"..HEAD --oneline)
+            if [ -z "$CHANGED" ]; then
+              echo "should_run=false" >> $GITHUB_OUTPUT
+              echo "No changes since last nightly build."
+            else
+              echo "should_run=true" >> $GITHUB_OUTPUT
+              echo "Changes detected."
+            fi
+          else
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "Nightly tag not found, running build."
+          fi
+
+  sync-and-build:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_run == 'true'
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      # 执行分支同步
+      - name: Sync dev-nightly branch
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # 强制创建/切换到 dev-nightly 分支
+          git checkout -b dev-nightly
+          # 强制推送到远程
+          git push -f origin dev-nightly
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: "pnpm"
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      # macOS特定配置
+      - name: Install LLVM on macOS
+        if: runner.os == 'macOS'
+        run: brew install llvm
+      - name: Set Environment Variables on macOS
+        if: runner.os == 'macOS'
+        run: |
+          echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
+          echo "AR=$(brew --prefix llvm)/bin/llvm-ar" >> $GITHUB_ENV
+
+      # Linux特定配置
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y rpm libarchive-tools libopenjp2-tools
+          chmod +x ./node_modules/app-builder-bin/linux/x64/app-builder || true
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Generate Nightly Version
+        id: version
+        shell: bash
+        run: |
+          # 读取 package.json 中的 version
+          BASE_VERSION=$(node -p "require('./package.json').version.split('-')[0]")
+          HASH=$(git rev-parse --short=7 HEAD)
+          DATE=$(date +'%Y%m%d')
+          # 格式: 3.0.0-nightly.20240207.abc1234
+          VERSION="${BASE_VERSION}-nightly.${DATE}.${HASH}"
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Generated version: ${VERSION}"
+
+          # 修改 package.json
+          npm pkg set version=${VERSION}
+
+      - name: Build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            pnpm build:win
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            pnpm build:mac
+          else
+            pnpm build:linux
+          fi
+        shell: bash
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-assets-${{ matrix.os }}
+          path: dist/*.*
+
+  release:
+    needs: sync-and-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev-nightly # 切换到 dev-nightly 分支
+          fetch-depth: 0
+
+      - name: Update Nightly Tag
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # 强制移动 nightly tag 到当前 HEAD (即 dev-nightly 的最新提交)
+          git tag -f nightly HEAD
+          git push -f origin nightly
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Update Nightly Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. 确保 nightly tag 和 release 存在
+          # 如果不存在则创建，存在则忽略
+          gh release create nightly --prerelease --title "Dev Nightly Build" --notes "Auto generated nightly build" --target dev-nightly || true
+
+          # 2. 获取最近更新日志 (从上一个 tag 到 HEAD)
+          # 注意：这里我们比较 dev 分支的变更
+          # 如果没有 tag，就显示最近 10 条
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            NOTES=$(git log -n 10 --pretty=format:"- %h %s")
+          else
+            # 排除 nightly tag 本身，找前一个
+            if [ "$LAST_TAG" == "nightly" ]; then
+               LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            fi
+            
+            if [ -z "$LAST_TAG" ]; then
+               NOTES=$(git log -n 10 --pretty=format:"- %h %s")
+            else 
+               NOTES=$(git log "$LAST_TAG"..HEAD --pretty=format:"- %h %s")
+            fi
+          fi
+
+          # 更新 Release Body
+          # gh release edit nightly --notes "## Nightly Build Update $(date +'%Y-%m-%d')\n\n$NOTES"
+
+          # 3. 删除旧 Assets 并上传新 Assets
+          echo "Deleting old assets..."
+          # 获取当前 Release 的所有 assets
+          ASSETS=$(gh release view nightly --json assets -q '.assets[].name')
+
+          for asset in $ASSETS; do
+            echo "Deleting $asset..."
+            gh release delete-asset nightly "$asset" -y
+          done
+
+          echo "Uploading new assets..."
+          # 整理 artifact 文件到 flat 目录
+          mkdir -p upload_dist
+          find artifacts -type f -not -path "*/artifacts/*" -exec cp {} upload_dist/ \;
+
+          # 排除 unpacked 文件夹 (虽然 find -type f 应该已经排除目录，但以防万一)
+          # 并且排除非构建产物
+          gh release upload nightly upload_dist/* --clobber

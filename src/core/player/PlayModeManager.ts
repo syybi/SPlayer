@@ -53,12 +53,12 @@ export class PlayModeManager {
 
     this.syncMediaPlayMode();
 
-    // const modeText: Record<RepeatModeType, string> = {
-    //   list: "列表循环",
-    //   one: "单曲循环",
-    //   off: "不循环",
-    // };
-    // window.$message.success(`已切换至：${modeText[statusStore.repeatMode]}`);
+    const modeText: Record<RepeatModeType, string> = {
+      list: "列表循环",
+      one: "单曲循环",
+      off: "不循环",
+    };
+    window.$message.success(modeText[statusStore.repeatMode], { showIcon: false });
   }
 
   /**
@@ -107,6 +107,8 @@ export class PlayModeManager {
     // 修正当前播放索引
     const idx = shuffled.findIndex((s) => s.id === musicStore.playSong?.id);
     if (idx !== -1) statusStore.playIndex = idx;
+
+    window.$message.success("随机播放已开启", { showIcon: false });
   }
 
   /**
@@ -225,6 +227,8 @@ export class PlayModeManager {
     } else {
       await dataStore.setPlayList(dataStore.playList);
     }
+
+    window.$message.success("随机播放已关闭", { showIcon: false });
   }
 
   /**

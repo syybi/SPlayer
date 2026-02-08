@@ -64,6 +64,8 @@ export interface SettingState {
   useOnlineService: boolean;
   /** 启动时检查更新 */
   checkUpdateOnStart: boolean;
+  /** 更新通道 */
+  updateChannel: "stable" | "nightly";
   /** 隐藏 VIP 标签 */
   hideVipTag: boolean;
   /** 歌词字体大小 */
@@ -404,6 +406,8 @@ export interface SettingState {
     wiki: boolean;
     search: boolean;
     download: boolean;
+    copyName: boolean;
+    musicTagEditor: boolean;
   };
   /** 启用搜索关键词获取 */
   enableSearchKeyword: boolean;
@@ -503,6 +507,7 @@ export const useSettingStore = defineStore("setting", {
     taskbarLyricSingleLineMode: false,
     taskbarLyricFontWeight: 400,
     checkUpdateOnStart: true,
+    updateChannel: "stable",
     preventSleep: false,
     useKeepAlive: true,
     songLevel: "exhigh",
@@ -683,6 +688,8 @@ export const useSettingStore = defineStore("setting", {
       wiki: true,
       search: true,
       download: true,
+      copyName: true,
+      musicTagEditor: true,
     },
     enableSearchKeyword: true,
     clearSearchOnBlur: false,

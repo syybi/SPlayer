@@ -104,7 +104,11 @@
     </div>
     <div v-else-if="loading" :class="['cover-list', 'loading', type]">
       <div class="cover-grid">
-        <div v-for="item in loadingNum || 50" :key="item" :class="['cover-item', { 'no-cover': hiddenCover }]">
+        <div
+          v-for="item in loadingNum || 50"
+          :key="item"
+          :class="['cover-item', { 'no-cover': hiddenCover }]"
+        >
           <div v-if="!hiddenCover" class="cover">
             <n-skeleton class="cover-img" />
           </div>
@@ -213,7 +217,7 @@ const playList = debounce(
 // 获取列表数据
 const getListData = async (id: number | string): Promise<SongType[]> => {
   // 判断是否为本地歌单
-  const isLocalPlaylist = id.toString().length === 16;
+  const isLocalPlaylist = localStore.isLocalPlaylist(id);
 
   switch (props.type) {
     case "album": {

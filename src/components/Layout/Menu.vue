@@ -62,7 +62,6 @@ const { isDesktop } = useMobile();
 // 菜单数据
 const menuRef = ref<MenuInst | null>(null);
 const menuActiveKey = ref<string | number>((router.currentRoute.value.name as string) || "home");
-const playlistMode = ref<"online" | "local">("online");
 
 // 刷新私人漫游
 const handleRefreshFM = async (e: Event) => {
@@ -217,7 +216,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           label: () =>
             h("div", { class: "user-list" }, [
               h(NText, { depth: 3 }, () =>
-                playlistMode.value === "online" ? "创建的歌单" : "本地歌单",
+                statusStore.playlistMode === "online" ? "创建的歌单" : "本地歌单",
               ),
               h(
                 NPopselect,
@@ -226,10 +225,10 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
                     { label: "在线歌单", value: "online" },
                     { label: "本地歌单", value: "local" },
                   ],
-                  value: playlistMode.value,
+                  value: statusStore.playlistMode,
                   trigger: "click",
                   onUpdateValue: (value: "online" | "local") => {
-                    playlistMode.value = value;
+                    statusStore.playlistMode = value;
                   },
                 },
                 () =>
@@ -250,12 +249,12 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
                 renderIcon: renderIcon("Add"),
                 onclick: (event: Event) => {
                   event.stopPropagation();
-                  openCreatePlaylist(playlistMode.value === "local");
+                  openCreatePlaylist(statusStore.playlistMode === "local");
                 },
               }),
             ]),
           children:
-            playlistMode.value === "online"
+            statusStore.playlistMode === "online"
               ? [...createPlaylist.value]
               : [...localPlaylistMenu.value],
         },
@@ -424,7 +423,7 @@ const menuUpdate = (key: string, item: MenuOption) => {
   } else if (typeof key === "string" && key.startsWith("local-")) {
     // 检查是否为本地歌单（16位数字ID）
     const localId = key.replace("local-", "");
-    const isLocalPlaylist = /^\d{16}$/.test(localId);
+    const isLocalPlaylist = localStore.isLocalPlaylist(localId);
     if (isLocalPlaylist) {
       router.push({
         name: "playlist",
@@ -492,7 +491,7 @@ const checkMenuItem = () => {
         (playlist) => playlist?.id === playlistId,
       );
       // 是否为本地歌单
-      const isLocalPlaylist = playlistId.toString().length === 16;
+      const isLocalPlaylist = localStore.isLocalPlaylist(playlistId);
       if (!playlistId) menuActiveKey.value = "home";
       if (isUserPlaylist) {
         menuActiveKey.value = Number(playlistId);

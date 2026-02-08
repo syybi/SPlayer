@@ -11,10 +11,13 @@ use windows::{
     },
     core::w,
 };
+use windows_core::PCWSTR;
 use winreg::{
     RegKey,
     enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE},
 };
+
+pub const BRIDGE_CLASS: PCWSTR = w!("Windows.UI.Composition.DesktopWindowContentBridge");
 
 pub const REG_KEY_ADVANCED: &str =
     "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";

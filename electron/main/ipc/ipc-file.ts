@@ -45,6 +45,23 @@ const initFileIpc = (): void => {
     }
   });
 
+  // 保存文件
+  ipcMain.handle(
+    "save-file",
+    async (_, args: { path: string; content: string; encoding?: BufferEncoding }) => {
+      try {
+        const { path, content, encoding } = args;
+        const dir = dirname(path);
+        await mkdir(dir, { recursive: true });
+        await writeFile(path, content, { encoding: encoding || "utf-8" });
+        return { success: true };
+      } catch (err) {
+        ipcLog.error("Failed to save file:", err);
+        throw err;
+      }
+    },
+  );
+
   // 默认文件夹
   ipcMain.handle(
     "get-default-dir",
@@ -222,7 +239,19 @@ const initFileIpc = (): void => {
   // 修改音乐元信息
   ipcMain.handle("set-music-metadata", async (_, path: string, metadata: any) => {
     try {
-      const { name, artist, album, alia, lyric, cover } = metadata;
+      const {
+        name,
+        artist,
+        album,
+        alia,
+        lyric,
+        cover,
+        albumArtist,
+        genre,
+        year,
+        trackNumber,
+        discNumber,
+      } = metadata;
       // 规范化路径
       const songPath = resolve(path);
       const coverPath = cover ? resolve(cover) : undefined;
@@ -233,6 +262,11 @@ const initFileIpc = (): void => {
         album: album || "未知专辑",
         lyric: lyric || "",
         description: alia || "",
+        albumArtist: albumArtist,
+        genre: genre,
+        year: year,
+        trackNumber: trackNumber,
+        discNumber: discNumber,
       };
 
       if (!tools) {
@@ -542,7 +576,7 @@ const initFileIpc = (): void => {
           await mkdir(downloadPath, { recursive: true });
         }
 
-        const finalFilePath = fileType 
+        const finalFilePath = fileType
           ? join(downloadPath, `${fileName}.${fileType}`)
           : join(downloadPath, fileName);
 
@@ -606,20 +640,21 @@ const initFileIpc = (): void => {
 
             // Handle both object (new) and JSON string (legacy/fallback)
             if (typeof progressData === "string") {
-               try {
-                 progressData = JSON.parse(progressData);
-               } catch (e) {
-                 console.error("Failed to parse progress json", e);
-                 return;
-               }
+              try {
+                progressData = JSON.parse(progressData);
+              } catch (e) {
+                console.error("Failed to parse progress json", e);
+                return;
+              }
             }
 
-            if (!progressData || typeof progressData !== 'object') return;
+            if (!progressData || typeof progressData !== "object") return;
 
             // Map snake_case (Rust) to camelCase (JS)
             // Rust struct: { percent, transferred_bytes, total_bytes }
             const percent = progressData.percent;
-            const transferredBytes = progressData.transferredBytes ?? progressData.transferred_bytes ?? 0;
+            const transferredBytes =
+              progressData.transferredBytes ?? progressData.transferred_bytes ?? 0;
             const totalBytes = progressData.totalBytes ?? progressData.total_bytes ?? 0;
 
             win.webContents.send("download-progress", {
@@ -629,12 +664,7 @@ const initFileIpc = (): void => {
               totalBytes: totalBytes,
             });
           } catch (e) {
-            console.error(
-              "Error processing progress callback",
-              e,
-              "Args:",
-              args,
-            );
+            console.error("Error processing progress callback", e, "Args:", args);
           }
         };
 

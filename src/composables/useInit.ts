@@ -1,17 +1,18 @@
 import { useDataStore, useSettingStore, useShortcutStore, useStatusStore } from "@/stores";
 import { useEventListener } from "@vueuse/core";
-import { watch } from "vue";
+import { watch, onMounted } from "vue";
 import { openUserAgreement } from "@/utils/modal";
 import { debounce } from "lodash-es";
-import { isElectron } from "./env";
+import { isElectron } from "@/utils/env";
 import { usePlayerController } from "@/core/player/PlayerController";
 import { mediaSessionManager } from "@/core/player/MediaSessionManager";
 import { useDownloadManager } from "@/core/resource/DownloadManager";
-import packageJson from "@/../package.json";
-import log from "./log";
+import { printVersion } from "@/utils/log";
 
-// 应用初始化时需要执行的操作
-const init = async () => {
+/**
+ * 应用初始化时需要执行的操作
+ */
+export const useInit = () => {
   // init pinia-data
   const dataStore = useDataStore();
   const statusStore = useStatusStore();
@@ -21,117 +22,114 @@ const init = async () => {
   const player = usePlayerController();
   const downloadManager = useDownloadManager();
 
-  // 检查并执行设置迁移
-  settingStore.checkAndMigrate();
-
-  printVersion();
-
-  // 用户协议
-  openUserAgreement();
-
   // 事件监听
   initEventListener();
 
-  // 加载数据
-  await dataStore.loadData();
-
-  // 初始化 MediaSession
-  mediaSessionManager.init();
-
-  // 初始化播放器
-  player.playSong({
-    autoPlay: settingStore.autoPlay,
-    seek: settingStore.memoryLastSeek ? statusStore.currentTime : 0,
-  });
-  // 同步播放模式
-  player.playModeSyncIpc();
-  // 初始化自动关闭定时器
-  if (statusStore.autoClose.enable) {
-    const { endTime, time } = statusStore.autoClose;
-    const now = Date.now();
-
-    if (endTime > now) {
-      // 计算真实剩余时间
-      const realRemainTime = Math.ceil((endTime - now) / 1000);
-      player.startAutoCloseTimer(time, realRemainTime);
-    } else {
-      // 定时器已过期，重置状态
-      statusStore.autoClose.enable = false;
-      statusStore.autoClose.remainTime = time * 60;
-      statusStore.autoClose.endTime = 0;
+  onMounted(async () => {
+    // 检查并执行设置迁移
+    settingStore.checkAndMigrate();
+    // 打印版本信息
+    printVersion();
+    // 用户协议
+    openUserAgreement();
+    // 加载数据
+    await dataStore.loadData();
+    // 初始化 MediaSession
+    mediaSessionManager.init();
+    // 初始化播放器
+    player.playSong({
+      autoPlay: settingStore.autoPlay,
+      seek: settingStore.memoryLastSeek ? statusStore.currentTime : 0,
+    });
+    // 同步播放模式
+    player.playModeSyncIpc();
+    // 初始化自动关闭定时器
+    if (statusStore.autoClose.enable) {
+      const { endTime, time } = statusStore.autoClose;
+      const now = Date.now();
+      if (endTime > now) {
+        // 计算真实剩余时间
+        const realRemainTime = Math.ceil((endTime - now) / 1000);
+        player.startAutoCloseTimer(time, realRemainTime);
+      } else {
+        // 定时器已过期，重置状态
+        statusStore.autoClose.enable = false;
+        statusStore.autoClose.remainTime = time * 60;
+        statusStore.autoClose.endTime = 0;
+      }
     }
-  }
+    if (isElectron) {
+      // 注册全局快捷键
+      shortcutStore.registerAllShortcuts();
+      // 初始化下载管理器
+      downloadManager.init();
+      // 显示窗口
+      window.electron.ipcRenderer.send("win-loaded");
+      // 同步任务栏歌词状态
+      window.electron.ipcRenderer.send("taskbar:toggle", statusStore.showTaskbarLyric);
+      // 显示桌面歌词
+      window.electron.ipcRenderer.send("toggle-desktop-lyric", statusStore.showDesktopLyric);
+      // 检查更新
+      if (settingStore.checkUpdateOnStart)
+        window.electron.ipcRenderer.send("check-update", false, settingStore.updateChannel);
 
-  if (isElectron) {
-    // 注册全局快捷键
-    shortcutStore.registerAllShortcuts();
-    // 初始化下载管理器
-    downloadManager.init();
-    // 显示窗口
-    window.electron.ipcRenderer.send("win-loaded");
-    // 同步任务栏歌词状态
-    window.electron.ipcRenderer.send("taskbar:toggle", statusStore.showTaskbarLyric);
-    // 显示桌面歌词
-    window.electron.ipcRenderer.send("toggle-desktop-lyric", statusStore.showDesktopLyric);
-    // 检查更新
-    if (settingStore.checkUpdateOnStart) window.electron.ipcRenderer.send("check-update");
+      // 监听任务栏歌词设置
+      watch(
+        () => settingStore.taskbarLyricMaxWidth,
+        (val) => {
+          window.electron.ipcRenderer.send("taskbar:set-max-width", val);
+        },
+      );
 
-    // 监听任务栏歌词设置
-    watch(
-      () => settingStore.taskbarLyricMaxWidth,
-      (val) => {
-        window.electron.ipcRenderer.send("taskbar:set-max-width", val);
-      },
-    );
+      watch(
+        () => settingStore.taskbarLyricShowCover,
+        (val) => {
+          window.electron.ipcRenderer.send("taskbar:set-show-cover", val);
+        },
+      );
 
-    watch(
-      () => settingStore.taskbarLyricShowCover,
-      (val) => {
-        window.electron.ipcRenderer.send("taskbar:set-show-cover", val);
-      },
-    );
+      watch(
+        () => settingStore.taskbarLyricPosition,
+        (val) => {
+          window.electron.ipcRenderer.send("taskbar:set-position", val);
+        },
+      );
 
-    watch(
-      () => settingStore.taskbarLyricPosition,
-      (val) => {
-        window.electron.ipcRenderer.send("taskbar:set-position", val);
-      },
-    );
+      watch(
+        () => settingStore.taskbarLyricShowWhenPaused,
+        (val) => {
+          window.electron.ipcRenderer.send("taskbar:set-show-when-paused", val);
+        },
+      );
 
-    watch(
-      () => settingStore.taskbarLyricShowWhenPaused,
-      (val) => {
-        window.electron.ipcRenderer.send("taskbar:set-show-when-paused", val);
-      },
-    );
+      watch(
+        () => settingStore.taskbarLyricAutoShrink,
+        (val) => {
+          window.electron.ipcRenderer.send("taskbar:set-auto-shrink", val);
+        },
+      );
 
-    watch(
-      () => settingStore.taskbarLyricAutoShrink,
-      (val) => {
-        window.electron.ipcRenderer.send("taskbar:set-auto-shrink", val);
-      },
-    );
-
-    watch(
-      () => [
-        settingStore.taskbarLyricAnimationMode,
-        settingStore.taskbarLyricSingleLineMode,
-        settingStore.LyricFont,
-        settingStore.globalFont,
-        settingStore.taskbarLyricFontWeight,
-      ],
-      () => {
-        window.electron.ipcRenderer.send("taskbar:broadcast-settings", {
-          animationMode: settingStore.taskbarLyricAnimationMode,
-          singleLineMode: settingStore.taskbarLyricSingleLineMode,
-          lyricFont: settingStore.LyricFont,
-          globalFont: settingStore.globalFont,
-          fontWeight: settingStore.taskbarLyricFontWeight,
-        });
-      },
-      { deep: true },
-    );
-  }
+      watch(
+        () => [
+          settingStore.taskbarLyricAnimationMode,
+          settingStore.taskbarLyricSingleLineMode,
+          settingStore.LyricFont,
+          settingStore.globalFont,
+          settingStore.taskbarLyricFontWeight,
+        ],
+        () => {
+          window.electron.ipcRenderer.send("taskbar:broadcast-settings", {
+            animationMode: settingStore.taskbarLyricAnimationMode,
+            singleLineMode: settingStore.taskbarLyricSingleLineMode,
+            lyricFont: settingStore.LyricFont,
+            globalFont: settingStore.globalFont,
+            fontWeight: settingStore.taskbarLyricFontWeight,
+          });
+        },
+        { deep: true },
+      );
+    }
+  });
 };
 
 // 事件监听
@@ -220,11 +218,3 @@ const keyDownEvent = debounce((event: KeyboardEvent) => {
     }
   }
 }, 100);
-
-// 版本输出
-const printVersion = async () => {
-  log.success(`🚀 ${packageJson.version}`, packageJson.productName);
-  log.info(`👤 ${packageJson.author}`, packageJson.github);
-};
-
-export default init;

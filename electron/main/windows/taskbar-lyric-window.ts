@@ -103,6 +103,10 @@ class TaskbarLyricWindow {
       maximizable: false,
       fullscreenable: false,
       resizable: false,
+      webPreferences: {
+        zoomFactor: 1.0,
+        partition: "persist:taskbar-lyric",
+      },
     });
 
     if (!this.win) return null;

@@ -149,6 +149,8 @@ interface StatusState {
     pointA: number | null;
     pointB: number | null;
   };
+  /** 侧边栏歌单显示模式 */
+  playlistMode: "online" | "local";
 }
 
 export const useStatusStore = defineStore("status", {
@@ -224,6 +226,7 @@ export const useStatusStore = defineStore("status", {
       pointA: null,
       pointB: null,
     },
+    playlistMode: "online",
   }),
   getters: {
     // 播放音量图标
@@ -431,6 +434,7 @@ export const useStatusStore = defineStore("status", {
       "developerMode",
       "themeBackgroundMode",
       "backgroundConfig",
+      "playlistMode",
     ],
   },
 });

@@ -13,7 +13,7 @@ import {
 } from "@/api/user";
 import { likeSong } from "@/api/song";
 import { formatCoverList, formatArtistsList, formatSongsList } from "@/utils/format";
-import { useDataStore, useMusicStore } from "@/stores";
+import { useDataStore, useMusicStore, useLocalStore } from "@/stores";
 import { logout, refreshLogin } from "@/api/login";
 import { debounce, isFunction, type DebouncedFunc } from "lodash-es";
 import { isBeforeSixAM } from "./time";
@@ -518,14 +518,40 @@ export const updateDailySongsData = async (refresh = false) => {
  * @param pid 歌单id
  * @param ids 要删除的歌曲id
  */
-export const deleteSongs = async (pid: number, ids: number[], callback?: () => void) => {
+export const deleteSongs = async (
+  pid: number,
+  ids: number[],
+  options: { callback?: () => void; songName?: string } = {},
+) => {
+  const { callback, songName } = options;
   try {
     window.$dialog.warning({
       title: "删除歌曲",
-      content: ids?.length > 1 ? "确定删除这些选中的歌曲吗？" : "确定删除这个歌曲吗？",
+      content:
+        ids?.length > 1
+          ? "确定删除这些选中的歌曲吗？"
+          : songName
+            ? `确定删除歌曲 ${songName} 吗？`
+            : "确定删除这个歌曲吗？",
       positiveText: "删除",
       negativeText: "取消",
       onPositiveClick: async () => {
+        // 本地歌单
+        if (pid.toString().length === 16) {
+          const localStore = useLocalStore();
+          const success = await localStore.removeSongsFromLocalPlaylist(
+            pid,
+            ids.map((id) => id.toString()),
+          );
+          if (success) {
+            if (isFunction(callback)) callback();
+            window.$message.success("删除成功");
+          } else {
+            window.$message.error("删除失败");
+          }
+          return;
+        }
+        // 在线歌单
         const result = await playlistTracks(pid, ids, "del");
         if (result.status === 200) {
           if (result.body?.code !== 200) {

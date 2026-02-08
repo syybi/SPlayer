@@ -48,6 +48,8 @@ const items: Item[] = [
   { label: "歌曲百科", key: "wiki" },
   { label: "搜索", key: "search" },
   { label: "下载", key: "download" },
+  { label: "复制歌曲名称", key: "copyName" },
+  { label: "音乐标签编辑", key: "musicTagEditor" },
 ];
 
 const updateSetting = (key: ContextMenuOptionKey, val: boolean) => {

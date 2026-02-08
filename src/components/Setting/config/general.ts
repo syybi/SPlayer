@@ -269,6 +269,24 @@ export const useGeneralSettings = (): SettingConfig => {
               set: (v) => (settingStore.checkUpdateOnStart = v),
             }),
           },
+          {
+            key: "updateChannel",
+            label: "更新通道",
+            type: "select",
+            description: "切换更新通道（Nightly 通道可体验最新功能）",
+            options: [
+              { label: "Stable (正式版)", value: "stable" },
+              { label: "Nightly (开发版)", value: "nightly" },
+            ],
+            value: computed({
+              get: () => settingStore.updateChannel,
+              set: (v) => {
+                settingStore.updateChannel = v;
+                // 切换后立即检查更新
+                if (isElectron) window.electron.ipcRenderer.send("check-update", true, v);
+              },
+            }),
+          },
         ],
       },
       {

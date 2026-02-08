@@ -38,16 +38,19 @@
             {{ packageJson.author }}
           </n-text>
           <n-text class="name">SPlayer</n-text>
+          <n-tag v-if="isNightly" class="version" size="small" type="primary" round>
+            Nightly · {{ displayVersion }}
+          </n-tag>
           <n-tag
-            v-if="statusStore.isDeveloperMode"
+            v-else-if="statusStore.isDeveloperMode"
             class="version"
             size="small"
             type="warning"
             round
           >
-            DEV · v{{ packageJson.version }}
+            DEV · {{ displayVersion }}
           </n-tag>
-          <n-text v-else class="version" depth="3">v{{ packageJson.version }}</n-text>
+          <n-text v-else class="version" depth="3">{{ displayVersion }}</n-text>
         </div>
       </div>
     </Transition>
@@ -127,8 +130,12 @@ import { useMobile } from "@/composables/useMobile";
 import { renderIcon } from "@/utils/helper";
 import { isElectron } from "@/utils/env";
 import { useStatusStore } from "@/stores";
+import { getDisplayVersion, isNightly } from "@/utils/version";
 import packageJson from "@/../package.json";
 import { usePlaySettings } from "./config/play";
+
+const displayVersion = getDisplayVersion();
+
 import { useGeneralSettings } from "./config/general";
 import { useAppearanceSettings } from "./config/appearance";
 import { useLyricSettings } from "./config/lyric";

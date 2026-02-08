@@ -14,12 +14,13 @@ declare global {
         export(data: any): Promise<{ success: boolean; path?: string; error?: string }>;
         import(): Promise<{ success: boolean; data?: any; error?: string }>;
       };
-      log: {
-        info(message: string, ...args: unknown[]): void;
-        warn(message: string, ...args: unknown[]): void;
-        error(message: string, ...args: unknown[]): void;
-        debug(message: string, ...args: unknown[]): void;
-      };
+    };
+    // logs
+    logger: {
+      info: (message: string, ...args: unknown[]) => void;
+      warn: (message: string, ...args: unknown[]) => void;
+      error: (message: string, ...args: unknown[]) => void;
+      debug: (message: string, ...args: unknown[]) => void;
     };
   }
 }

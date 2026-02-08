@@ -202,11 +202,12 @@
 import type { UpdateLogType } from "@/types/main";
 import { getUpdateLog, openLink } from "@/utils/helper";
 import { debounce } from "lodash-es";
-import { useStatusStore } from "@/stores";
+import { useStatusStore, useSettingStore } from "@/stores";
 import { isElectron } from "@/utils/env";
 import packageJson from "@/../package.json";
 
 const statusStore = useStatusStore();
+const settingStore = useSettingStore();
 
 // 打开日志文件
 const handleOpenLog = () => {
@@ -354,7 +355,7 @@ const checkUpdate = debounce(
       return;
     }
     statusStore.updateCheck = true;
-    window.electron.ipcRenderer.send("check-update", true);
+    window.electron.ipcRenderer.send("check-update", true, settingStore.updateChannel);
   },
   300,
   { leading: true, trailing: false },

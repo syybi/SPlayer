@@ -13,7 +13,7 @@
     >
       <div class="header" align="center" justify="space-between">
         <n-flex :wrap="false" align="center" justify="flex-start" size="small" @pointerdown.stop>
-          <div class="menu-btn" @click.stop="sendToMain('win-show')">
+          <div class="menu-btn" @click.stop="sendToMain('win-show-main')">
             <SvgIcon name="Music" />
           </div>
           <span class="song-name">{{ lyricData.playName }} - {{ lyricData.artistName }}</span>

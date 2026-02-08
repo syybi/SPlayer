@@ -184,27 +184,32 @@ fn create_strategy() -> Option<Box<dyn TaskbarStrategy>> {
     let build_num = get_windows_build_number();
     debug!("Windows 版本号: {build_num}");
 
-    let mut strategy: Box<dyn TaskbarStrategy> = if build_num >= 22000 {
-        debug!("选择 Win11Strategy");
-        Box::new(Win11Strategy::new())
-    } else {
-        debug!("选择 LegacyStrategy");
-        Box::new(LegacyStrategy::new())
-    };
-
-    if strategy.init() {
-        Some(strategy)
-    } else {
-        warn!("初始化主要策略时失败，回退到 Win11Strategy");
-        let mut fallback = Box::new(Win11Strategy::new());
-        if fallback.init() {
-            info!("回退策略初始化成功");
-            Some(fallback)
+    let (mut primary, mut secondary): (Box<dyn TaskbarStrategy>, Box<dyn TaskbarStrategy>) =
+        if build_num >= 22000 {
+            (
+                Box::new(Win11Strategy::new()),
+                Box::new(LegacyStrategy::new()),
+            )
         } else {
-            error!("所有策略均初始化失败");
-            None
-        }
+            (
+                Box::new(LegacyStrategy::new()),
+                Box::new(Win11Strategy::new()),
+            )
+        };
+
+    if primary.init() {
+        debug!("首选策略初始化成功");
+        return Some(primary);
     }
+
+    warn!("首选策略失效，尝试备选策略");
+    if secondary.init() {
+        debug!("备选策略初始化成功");
+        return Some(secondary);
+    }
+
+    error!("未检测到支持的任务栏结构");
+    None
 }
 
 #[napi]

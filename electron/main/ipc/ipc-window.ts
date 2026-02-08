@@ -121,6 +121,14 @@ const initWindowsIpc = (): void => {
     win.focus();
   });
 
+  // 显示主窗口
+  ipcMain.on("win-show-main", () => {
+    const mainWin = mainWindow.getWin();
+    if (!mainWin) return;
+    mainWin.show();
+    mainWin.focus();
+  });
+
   // 重载
   ipcMain.on("win-reload", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -137,7 +145,7 @@ const initWindowsIpc = (): void => {
   // 向主窗口发送事件
   ipcMain.on("send-to-main-win", (_, eventName, ...args) => {
     const mainWin = mainWindow.getWin();
-    if (!mainWin || mainWin.isDestroyed() || mainWin.webContents.isDestroyed()) return;
+    if (!mainWin) return;
     mainWin.webContents.send(eventName, ...args);
   });
 
@@ -149,7 +157,6 @@ const initWindowsIpc = (): void => {
   const updateProgressBar = () => {
     const mainWin = mainWindow.getWin();
     if (!mainWin) return;
-
     if (currentProgress < 0) {
       mainWin.setProgressBar(-1);
     } else {

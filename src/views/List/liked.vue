@@ -44,7 +44,7 @@
 import type { DropdownOption } from "naive-ui";
 import { SongType } from "@/types/main";
 import { songDetail } from "@/api/song";
-import { playlistDetail } from "@/api/playlist";
+import { playlistDetail, playlistAllSongs } from "@/api/playlist";
 import { formatCoverList, formatSongsList } from "@/utils/format";
 import { renderIcon, copyData } from "@/utils/helper";
 import { isObject } from "lodash-es";
@@ -61,8 +61,16 @@ const dataStore = useDataStore();
 // 是否激活
 const isActivated = ref<boolean>(false);
 
-const { detailData, listData, loading, getSongListHeight, setDetailData, setListData, setLoading } =
-  useListDetail();
+const {
+  detailData,
+  listData,
+  loading,
+  getSongListHeight,
+  setDetailData,
+  setListData,
+  appendListData,
+  setLoading,
+} = useListDetail();
 const { searchValue, searchData, displayData, clearSearch, performSearch } =
   useListSearch(listData);
 const { listScrolling, handleListScroll, resetScroll } = useListScroll();
@@ -181,12 +189,21 @@ const loadPlaylistData = async (id: number, forceRefresh: boolean = false) => {
     setDetailData(formatCoverList(detail.playlist)[0]);
     // 获取全部 ID 顺序
     const serverIds: number[] = detail.privileges?.map((p: any) => p.id) || [];
-    if (serverIds.length === 0) {
-      setLoading(false);
-      return;
+    const trackCount = detail.playlist?.trackCount || 0;
+
+    // 如果 privileges 数量少于 trackCount，说明数据不完整，需要全量获取
+    if (serverIds.length < trackCount && trackCount > 0) {
+      console.log(`🔄 Liked songs incomplete (${serverIds.length}/${trackCount}), fetching all...`);
+      await fetchAllSongs(id, trackCount);
+    } else {
+      if (serverIds.length === 0) {
+        setLoading(false);
+        return;
+      }
+      // 同步歌曲列表
+      await syncSongList(serverIds, id);
     }
-    // 同步歌曲列表
-    await syncSongList(serverIds, id);
+
     // 更新缓存
     if (currentRequestId.value === id && detailData.value) {
       dataStore.setLikeSongsList(detailData.value, listData.value);
@@ -198,6 +215,41 @@ const loadPlaylistData = async (id: number, forceRefresh: boolean = false) => {
       setLoading(false);
     }
   }
+};
+
+/**
+ * 全量获取歌曲列表
+ * 当 privileges 数据不完整时调用
+ */
+const fetchAllSongs = async (id: number, total: number) => {
+  const limit = 500;
+  let offset = 0;
+  const allSongs: SongType[] = [];
+
+  while (offset < total) {
+    if (currentRequestId.value !== id) return;
+    try {
+      const result = await playlistAllSongs(id, limit, offset);
+      if (currentRequestId.value !== id) return;
+      const songs = formatSongsList(result.songs);
+      allSongs.push(...songs);
+      // 实时更新列表展示
+      if (offset === 0) {
+        setListData(songs);
+      } else {
+        appendListData(songs);
+      }
+      offset += limit;
+    } catch (error) {
+      console.error("Failed to fetch all songs:", error);
+      break;
+    }
+  }
+
+  if (currentRequestId.value !== id) return;
+  // 确保最终列表完整性
+  setListData(allSongs);
+  console.log(`✅ Fetched all ${allSongs.length} liked songs`);
 };
 
 /**

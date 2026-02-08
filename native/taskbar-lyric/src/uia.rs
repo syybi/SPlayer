@@ -1,24 +1,20 @@
 use anyhow::{Context, Result, bail};
-use windows::{
-    Win32::{
-        Foundation::{HWND, RPC_E_CHANGED_MODE},
-        System::Com::{
-            CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
-            CoUninitialize,
-        },
-        UI::{
-            Accessibility::{
-                CUIAutomation, IUIAutomation, IUIAutomationElement, TreeScope_Descendants,
-            },
-            WindowsAndMessaging::FindWindowExW,
-        },
+use windows::Win32::{
+    Foundation::{HWND, RPC_E_CHANGED_MODE},
+    System::Com::{
+        CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
+        CoUninitialize,
     },
-    core::{PCWSTR, w},
+    UI::{
+        Accessibility::{
+            CUIAutomation, IUIAutomation, IUIAutomationElement, TreeScope_Descendants,
+        },
+        WindowsAndMessaging::FindWindowExW,
+    },
 };
 
-use crate::strategy::Rect;
+use crate::{strategy::Rect, utils::BRIDGE_CLASS};
 
-const BRIDGE_CLASS: PCWSTR = w!("Windows.UI.Composition.DesktopWindowContentBridge");
 const CLASS_TASKLIST_BUTTON: &str = "Taskbar.TaskListButtonAutomationPeer";
 const ID_START_BUTTON: &str = "StartButton";
 const ID_SEARCH_BUTTON: &str = "SearchButton";

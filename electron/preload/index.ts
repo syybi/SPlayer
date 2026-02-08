@@ -18,17 +18,17 @@ if (process.contextIsolated) {
         export: (data: any) => ipcRenderer.invoke("store-export", data),
         import: () => ipcRenderer.invoke("store-import"),
       },
-      // Renderer logging API
-      log: {
-        info: (message: string, ...args: unknown[]) =>
-          ipcRenderer.send("renderer-log", "info", message, args),
-        warn: (message: string, ...args: unknown[]) =>
-          ipcRenderer.send("renderer-log", "warn", message, args),
-        error: (message: string, ...args: unknown[]) =>
-          ipcRenderer.send("renderer-log", "error", message, args),
-        debug: (message: string, ...args: unknown[]) =>
-          ipcRenderer.send("renderer-log", "debug", message, args),
-      },
+    });
+    // Expose logger API via preload
+    contextBridge.exposeInMainWorld("logger", {
+      info: (message: string, ...args: unknown[]) =>
+        ipcRenderer.send("renderer-log", "info", message, args),
+      warn: (message: string, ...args: unknown[]) =>
+        ipcRenderer.send("renderer-log", "warn", message, args),
+      error: (message: string, ...args: unknown[]) =>
+        ipcRenderer.send("renderer-log", "error", message, args),
+      debug: (message: string, ...args: unknown[]) =>
+        ipcRenderer.send("renderer-log", "debug", message, args),
     });
   } catch (error) {
     console.error(error);

@@ -1,6 +1,12 @@
 import { DropdownOption } from "naive-ui";
 import { SongType } from "@/types/main";
-import { useStatusStore, useDataStore, useMusicStore, useSettingStore } from "@/stores";
+import {
+  useStatusStore,
+  useDataStore,
+  useMusicStore,
+  useSettingStore,
+  useLocalStore,
+} from "@/stores";
 import { useDownloadManager } from "@/core/resource/DownloadManager";
 import { usePlayerController } from "@/core/player/PlayerController";
 import { renderIcon, copyData } from "@/utils/helper";
@@ -25,6 +31,7 @@ export const useSongMenu = () => {
   const settingStore = useSettingStore();
   const player = usePlayerController();
   const downloadManager = useDownloadManager();
+  const localStore = useLocalStore();
 
   // 删除本地歌曲
   const deleteLocalSong = (song: SongType, emit: (event: "removeSong", args: any[]) => void) => {
@@ -157,7 +164,9 @@ export const useSongMenu = () => {
     const isLocal = !!song?.path;
     const isLoginNormal = isLogin() === 1;
     const isCurrent = statusStore.playIndex === index;
-    const isUserPlaylist = !!playListId && userPlaylistsData.some((pl) => pl.id === playListId);
+    const isLocalPlaylist = localStore.isLocalPlaylist(playListId);
+    const isUserPlaylist =
+      (!!playListId && userPlaylistsData.some((pl) => pl.id === playListId)) || isLocalPlaylist;
     const isDownloading = dataStore.downloadingSongs.some((item) => item.song.id === song.id);
 
     return [
@@ -173,10 +182,7 @@ export const useSongMenu = () => {
       {
         key: "play-next",
         label: "下一首播放",
-        show:
-          settingStore.contextMenuOptions.playNext &&
-          !isCurrent &&
-          !statusStore.personalFmMode,
+        show: settingStore.contextMenuOptions.playNext && !isCurrent && !statusStore.personalFmMode,
         props: {
           onClick: () => player.addNextSong(song, false),
         },
@@ -227,6 +233,7 @@ export const useSongMenu = () => {
           {
             key: "code-name",
             label: `复制${type === "song" ? "歌曲" : type === "streaming" ? "流媒体" : "节目"}名称`,
+            show: settingStore.contextMenuOptions.copyName,
             props: {
               onClick: () => copyData(song.name),
             },
@@ -254,12 +261,12 @@ export const useSongMenu = () => {
           {
             key: "line-2",
             type: "divider",
-            show: isLocal,
+            show: settingStore.contextMenuOptions.musicTagEditor && isLocal,
           },
           {
             key: "meta-edit",
             label: "音乐标签编辑",
-            show: isLocal,
+            show: settingStore.contextMenuOptions.musicTagEditor && isLocal,
             props: {
               onClick: () => {
                 if (song.path) openSongInfoEditor(song);
@@ -294,10 +301,14 @@ export const useSongMenu = () => {
         show:
           settingStore.contextMenuOptions.deleteFromPlaylist &&
           isUserPlaylist &&
-          isLoginNormal &&
+          (isLocalPlaylist || isLoginNormal) &&
           !isCloud,
         props: {
-          onClick: () => deleteSongs(playListId!, [song.id], () => emit("removeSong", [song.id])),
+          onClick: () =>
+            deleteSongs(playListId!, [song.id], {
+              callback: () => emit("removeSong", [song.id]),
+              songName: song.name,
+            }),
         },
         icon: renderIcon("Delete"),
       },
@@ -371,9 +382,7 @@ export const useSongMenu = () => {
         key: "retry-download",
         label: "重试下载",
         show:
-          settingStore.contextMenuOptions.download &&
-          statusStore.isDeveloperMode &&
-          isDownloading,
+          settingStore.contextMenuOptions.download && statusStore.isDeveloperMode && isDownloading,
         props: { onClick: () => downloadManager.retryDownload(song.id) },
         icon: renderIcon("Refresh"),
       },
