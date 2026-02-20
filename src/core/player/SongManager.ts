@@ -1,5 +1,6 @@
 import { personalFm, personalFmToTrash } from "@/api/rec";
 import { songUrl, unlockSongUrl } from "@/api/song";
+import { useLyricManager } from "@/core/player/LyricManager";
 import {
   useDataStore,
   useMusicStore,
@@ -44,6 +45,55 @@ export type AudioSource = {
 class SongManager {
   /** 预载下一首歌曲播放信息 */
   private nextPrefetch: AudioSource | undefined;
+
+  public peekPrefetch(id: number): AudioSource | undefined {
+    if (!this.nextPrefetch) return;
+    if (this.nextPrefetch.id !== id) return;
+    return this.nextPrefetch;
+  }
+
+  public async getMusicCachePath(
+    id: number | string,
+    quality?: QualityType | string,
+  ): Promise<string | null> {
+    const settingStore = useSettingStore();
+    if (!isElectron || !settingStore.cacheEnabled || !settingStore.songCacheEnabled) return null;
+    try {
+      return await window.electron.ipcRenderer.invoke("music-cache-check", id, quality);
+    } catch {
+      return null;
+    }
+  }
+
+  public async ensureMusicCachePath(
+    id: number | string,
+    url: string | undefined,
+    quality?: QualityType | string,
+  ): Promise<string | null> {
+    const existing = await this.getMusicCachePath(id, quality);
+    if (existing) return existing;
+    if (!url) return null;
+
+    const settingStore = useSettingStore();
+    if (!isElectron || !settingStore.cacheEnabled || !settingStore.songCacheEnabled) return null;
+    try {
+      const result: unknown = await window.electron.ipcRenderer.invoke(
+        "music-cache-download",
+        id,
+        url,
+        quality || "standard",
+      );
+      if (result && typeof result === "object") {
+        const record = result as Record<string, unknown>;
+        if (record.success === true && typeof record.path === "string") {
+          return record.path;
+        }
+      }
+    } catch {
+      return null;
+    }
+    return await this.getMusicCachePath(id);
+  }
 
   /**
    * 预加载封面图片
@@ -246,14 +296,15 @@ class SongManager {
   };
 
   /**
-   * 预载下一首歌曲播放地址
+   * 预载下一首歌曲
    * @returns 预载数据
    */
-  public getNextSongUrl = async (): Promise<AudioSource | undefined> => {
+  public prefetchNextSong = async (): Promise<AudioSource | undefined> => {
     try {
       const dataStore = useDataStore();
       const statusStore = useStatusStore();
       const settingStore = useSettingStore();
+      const lyricManager = useLyricManager();
 
       // 无列表或私人FM模式直接跳过
       const playList = dataStore.playList;
@@ -269,9 +320,19 @@ class SongManager {
 
       // 预加载封面图片
       this.prefetchCover(nextSong);
+      // 预加载歌词
+      lyricManager.prefetchLyric(nextSong);
 
-      // 本地歌曲跳过
-      if (nextSong.path) return;
+      // 本地歌曲
+      if (nextSong.path) {
+        // 预分析音频 (Automix)
+        if (isElectron && settingStore.enableAutomix) {
+          window.electron.ipcRenderer.invoke("analyze-audio-head", nextSong.path).catch((e) => {
+            console.warn("[Prefetch] Analysis failed:", e);
+          });
+        }
+        return;
+      }
 
       // 流媒体歌曲
       if (nextSong.type === "streaming" && nextSong.streamUrl) {
@@ -294,7 +355,13 @@ class SongManager {
       const { url: officialUrl, isTrial, quality } = await this.getOnlineUrl(songId, false);
       if (officialUrl && !isTrial) {
         // 官方可播放且非试听
-        this.nextPrefetch = { id: songId, url: officialUrl, isUnlocked: false, quality };
+        this.nextPrefetch = {
+          id: songId,
+          url: officialUrl,
+          isUnlocked: false,
+          quality,
+          source: "official",
+        };
         return this.nextPrefetch;
       } else if (canUnlock) {
         // 官方失败或为试听时尝试解锁
@@ -304,14 +371,14 @@ class SongManager {
           return this.nextPrefetch;
         } else if (officialUrl && settingStore.playSongDemo) {
           // 解锁失败，若官方为试听且允许试听，保留官方试听地址
-          this.nextPrefetch = { id: songId, url: officialUrl };
+          this.nextPrefetch = { id: songId, url: officialUrl, source: "official" };
           return this.nextPrefetch;
         } else {
           return;
         }
       } else {
         // 不可解锁，仅保留官方结果（可能为空）
-        this.nextPrefetch = { id: songId, url: officialUrl };
+        this.nextPrefetch = { id: songId, url: officialUrl, source: "official" };
         return this.nextPrefetch;
       }
     } catch (error) {

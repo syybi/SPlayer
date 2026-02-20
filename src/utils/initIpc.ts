@@ -2,11 +2,13 @@ import { usePlayerController } from "@/core/player/PlayerController";
 import * as playerIpc from "@/core/player/PlayerIpc";
 import { useDataStore, useMusicStore, useSettingStore, useStatusStore } from "@/stores";
 import type { SettingType } from "@/types/main";
+import { TASKBAR_IPC_CHANNELS, type TaskbarConfig } from "@/types/shared";
 import { handleProtocolUrl } from "@/utils/protocol";
 import { cloneDeep } from "lodash-es";
 import { toRaw } from "vue";
 import { toLikeSong } from "./auth";
-import { isElectron } from "./env";
+import { sendTaskbarCoverColor } from "./color";
+import { isElectron, isMac } from "./env";
 import { getPlayerInfoObj } from "./format";
 import { openSetting, openUpdateApp } from "./modal";
 
@@ -21,6 +23,8 @@ const initIpc = () => {
   try {
     if (!isElectron) return;
     const player = usePlayerController();
+    const statusStore = useStatusStore();
+
     // 播放
     window.electron.ipcRenderer.on("play", () => player.play());
     // 暂停
@@ -35,6 +39,9 @@ const initIpc = () => {
     window.electron.ipcRenderer.on("volumeUp", () => player.setVolume("up"));
     // 音量减
     window.electron.ipcRenderer.on("volumeDown", () => player.setVolume("down"));
+    // 快进 / 快退
+    window.electron.ipcRenderer.on("seekForward", () => player.seekBy(5000));
+    window.electron.ipcRenderer.on("seekBackward", () => player.seekBy(-5000));
     // 播放模式切换
     window.electron.ipcRenderer.on("changeRepeat", (_, mode) => player.toggleRepeat(mode));
     window.electron.ipcRenderer.on("toggleShuffle", (_, mode) => player.toggleShuffle(mode));
@@ -49,69 +56,114 @@ const initIpc = () => {
       openSetting(type, scrollTo),
     );
     // 桌面歌词开关
-    window.electron.ipcRenderer.on("toggle-desktop-lyric", () => player.toggleDesktopLyric());
+    window.electron.ipcRenderer.on("desktop-lyric:toggle", () => player.toggleDesktopLyric());
     // 显式关闭桌面歌词
-    window.electron.ipcRenderer.on("close-desktop-lyric", () => player.setDesktopLyricShow(false));
+    window.electron.ipcRenderer.on("desktop-lyric:close", () => player.setDesktopLyricShow(false));
     // 任务栏歌词开关
-    window.electron.ipcRenderer.on("toggle-taskbar-lyric", () => player.toggleTaskbarLyric());
+    window.electron.ipcRenderer.on("toggle-taskbar-lyric", async () => {
+      if (isMac) {
+        const currentMacLyricEnabled = await window.electron.ipcRenderer.invoke(
+          "store-get",
+          "macos.statusBarLyric.enabled",
+        );
+        const newState = !currentMacLyricEnabled;
+        window.electron.ipcRenderer.send("macos-lyric:toggle", newState);
+        const message = `${newState ? "已开启" : "已关闭"}状态栏歌词`;
+        window.$message.success(message);
+      } else {
+        player.toggleTaskbarLyric();
+      }
+    });
+
+    // 监听主进程发来的 macOS 状态栏歌词启用状态更新
+    window.electron.ipcRenderer.on(
+      "setting:update-macos-lyric-enabled",
+      (_event, enabled: boolean) => {
+        const settingStore = useSettingStore();
+        settingStore.macos.statusBarLyric.enabled = enabled;
+      },
+    );
+
     // 给任务栏歌词初始数据
-    window.electron.ipcRenderer.on("taskbar:request-data", () => {
+    window.electron.ipcRenderer.on(TASKBAR_IPC_CHANNELS.REQUEST_DATA, () => {
       const musicStore = useMusicStore();
       const statusStore = useStatusStore();
       const settingStore = useSettingStore();
+
       const { name, artist } = getPlayerInfoObj() || {};
-      const cover = musicStore.playSong?.cover || "";
+      const cover = musicStore.getSongCover("s") || "";
 
-      playerIpc.sendTaskbarMetadata({
-        title: name || "",
-        artist: artist || "",
-        cover,
-      });
-      playerIpc.sendTaskbarState({
-        isPlaying: statusStore.playStatus,
-      });
+      const configPayload: TaskbarConfig = {
+        // 布局
+        maxWidth: settingStore.taskbarLyricMaxWidth,
+        position: settingStore.taskbarLyricPosition,
+        autoShrink: settingStore.taskbarLyricAutoShrink,
+        margin: settingStore.taskbarLyricMargin,
+        minWidth: settingStore.taskbarLyricMinWidth,
 
-      // 发送歌词数据
-      playerIpc.sendTaskbarLyrics(musicStore.songLyric);
+        // 行为
+        enabled: statusStore.showTaskbarLyric,
+        showWhenPaused: settingStore.taskbarLyricShowWhenPaused,
 
-      // 发送设置
-      window.electron.ipcRenderer.send(
-        "taskbar:set-show-cover",
-        settingStore.taskbarLyricShowCover,
-      );
-      window.electron.ipcRenderer.send("taskbar:set-max-width", settingStore.taskbarLyricMaxWidth);
-      window.electron.ipcRenderer.send("taskbar:set-position", settingStore.taskbarLyricPosition);
-      window.electron.ipcRenderer.send(
-        "taskbar:set-show-when-paused",
-        settingStore.taskbarLyricShowWhenPaused,
-      );
-      window.electron.ipcRenderer.send(
-        "taskbar:set-auto-shrink",
-        settingStore.taskbarLyricAutoShrink,
-      );
-      window.electron.ipcRenderer.send("taskbar:broadcast-settings", {
-        animationMode: settingStore.taskbarLyricAnimationMode,
-        singleLineMode: settingStore.taskbarLyricSingleLineMode,
-        lyricFont: settingStore.LyricFont,
+        // 外观
+        showCover: settingStore.taskbarLyricShowCover,
+        themeMode: "auto", // TODO:
+        fontFamily: settingStore.LyricFont,
         globalFont: settingStore.globalFont,
         fontWeight: settingStore.taskbarLyricFontWeight,
+        animationMode: settingStore.taskbarLyricAnimationMode,
+        singleLineMode: settingStore.taskbarLyricSingleLineMode,
+        showTranslation: settingStore.showTran,
+        showRomaji: settingStore.showRoma,
+      };
+
+      const hasYrc = (musicStore.songLyric.yrcData?.length ?? 0) > 0;
+      const lyricsPayload = {
+        lines: toRaw(hasYrc ? musicStore.songLyric.yrcData : musicStore.songLyric.lrcData) ?? [],
+        type: (hasYrc ? "word" : "line") as "line" | "word",
+      };
+
+      playerIpc.broadcastTaskbarState({
+        type: "full-hydration",
+        data: {
+          track: {
+            title: name || "",
+            artist: artist || "",
+            cover: cover,
+          },
+          lyrics: lyricsPayload,
+          lyricLoading: statusStore.lyricLoading,
+          playback: {
+            isPlaying: statusStore.playStatus,
+            tick: [
+              statusStore.currentTime,
+              statusStore.duration,
+              statusStore.getSongOffset(musicStore.playSong?.id),
+            ],
+          },
+          config: configPayload,
+          themeColor: null, // TODO:
+        },
       });
 
-      playerIpc.sendTaskbarProgressData({
-        currentTime: statusStore.currentTime * 1000,
-        duration: statusStore.duration * 1000,
+      // macOS 状态栏歌词进度数据
+      window.electron.ipcRenderer.send("mac-statusbar:update-progress", {
+        currentTime: statusStore.currentTime,
+        duration: statusStore.duration,
         offset: statusStore.getSongOffset(musicStore.playSong?.id),
       });
+      // 发送封面颜色
+      sendTaskbarCoverColor();
     });
 
     // 请求歌词数据
-    window.electron.ipcRenderer.on("request-desktop-lyric-data", () => {
+    window.electron.ipcRenderer.on("desktop-lyric:request-data", () => {
       const musicStore = useMusicStore();
       const statusStore = useStatusStore();
       if (player) {
         const { name, artist } = getPlayerInfoObj() || {};
         window.electron.ipcRenderer.send(
-          "update-desktop-lyric-data",
+          "desktop-lyric:update-data",
           cloneDeep({
             playStatus: statusStore.playStatus,
             playName: name,
@@ -130,17 +182,37 @@ const initIpc = () => {
     // 无更新
     window.electron.ipcRenderer.on("update-not-available", () => {
       closeUpdateStatus();
+      statusStore.updateAvailable = false;
+      statusStore.updateInfo = null;
       window.$message.success("当前已是最新版本");
     });
     // 有更新
     window.electron.ipcRenderer.on("update-available", (_, info) => {
       closeUpdateStatus();
+      statusStore.updateAvailable = true;
+      statusStore.updateInfo = info;
+      statusStore.updateDownloaded = false;
+      statusStore.updateDownloading = false;
+      statusStore.updateDownloadProgress = 0;
+      // 弹窗提示
       openUpdateApp(info);
+    });
+    // 更新下载进度
+    window.electron.ipcRenderer.on("download-progress", (_, progress) => {
+      statusStore.updateDownloading = true;
+      statusStore.updateDownloadProgress = Number((progress?.percent || 0).toFixed(1));
+    });
+    // 更新下载完成
+    window.electron.ipcRenderer.on("update-downloaded", () => {
+      statusStore.updateDownloading = false;
+      statusStore.updateDownloaded = true;
+      statusStore.updateDownloadProgress = 100;
     });
     // 更新错误
     window.electron.ipcRenderer.on("update-error", (_, error) => {
       console.error("Error updating:", error);
       closeUpdateStatus();
+      statusStore.updateDownloading = false;
       window.$message.error("更新过程出现错误");
     });
     // 协议数据

@@ -4,7 +4,7 @@ import { usePlayerController } from "@/core/player/PlayerController";
 import { useSettingStore, useStatusStore } from "@/stores";
 import type { LyricConfig } from "@/types/desktop-lyric";
 import type { SettingConfig } from "@/types/settings";
-import { isElectron, isWin } from "@/utils/env";
+import { isElectron, isWin, isMac } from "@/utils/env";
 import { descMultiline } from "@/utils/format";
 import { openAMLLServer, openExcludeLyric, openFontManager } from "@/utils/modal";
 import { cloneDeep, isEqual } from "lodash-es";
@@ -22,11 +22,11 @@ export const useLyricSettings = (): SettingConfig => {
 
   const getDesktopLyricConfig = async () => {
     if (!isElectron) return;
-    const config = await window.electron.ipcRenderer.invoke("request-desktop-lyric-option");
+    const config = await window.electron.ipcRenderer.invoke("desktop-lyric:get-option");
     if (config) Object.assign(desktopLyricConfig, config);
 
     // 监听更新
-    window.electron.ipcRenderer.on("update-desktop-lyric-option", (_, config) => {
+    window.electron.ipcRenderer.on("desktop-lyric:update-option", (_, config) => {
       if (config && !isEqual(desktopLyricConfig, config)) {
         Object.assign(desktopLyricConfig, config);
       }
@@ -37,7 +37,7 @@ export const useLyricSettings = (): SettingConfig => {
     try {
       if (!isElectron) return;
       window.electron.ipcRenderer.send(
-        "update-desktop-lyric-option",
+        "desktop-lyric:set-option",
         cloneDeep(desktopLyricConfig),
         true,
       );
@@ -59,7 +59,7 @@ export const useLyricSettings = (): SettingConfig => {
         negativeText: "取消",
         onPositiveClick: () => {
           window.electron.ipcRenderer.send(
-            "update-desktop-lyric-option",
+            "desktop-lyric:set-option",
             defaultDesktopLyricConfig,
             true,
           );
@@ -94,10 +94,24 @@ export const useLyricSettings = (): SettingConfig => {
             component: markRaw(LyricPreview),
           },
           {
+            key: "lyricFontSizeMode",
+            label: "自适应歌词大小",
+            type: "switch",
+            description: "开启后歌词大小将根据窗口高度自动缩放，避免全屏时过小或窗口时过大",
+            value: computed({
+              get: () => settingStore.lyricFontSizeMode === "adaptive",
+              set: (v) => (settingStore.lyricFontSizeMode = v ? "adaptive" : "fixed"),
+            }),
+          },
+          {
             key: "lyricFontSize",
             label: "歌词字体大小",
             type: "input-number",
-            description: "单位 px，最小 12，最大 60",
+            description: computed(() =>
+              settingStore.lyricFontSizeMode === "adaptive"
+                ? "作为基准大小 (以 1080p 高度为准)"
+                : "单位 px，最小 12，最大 60",
+            ),
             min: 12,
             max: 60,
             suffix: "px",
@@ -111,7 +125,11 @@ export const useLyricSettings = (): SettingConfig => {
             key: "lyricTranFontSize",
             label: "翻译歌词大小",
             type: "input-number",
-            description: "单位 px，最小 5，最大 40",
+            description: computed(() =>
+              settingStore.lyricFontSizeMode === "adaptive"
+                ? "作为基准大小 (以 1080p 高度为准)"
+                : "单位 px，最小 5，最大 40",
+            ),
             min: 5,
             max: 40,
             suffix: "px",
@@ -130,7 +148,11 @@ export const useLyricSettings = (): SettingConfig => {
             key: "lyricRomaFontSize",
             label: "音译歌词大小",
             type: "input-number",
-            description: "单位 px，最小 5，最大 40",
+            description: computed(() =>
+              settingStore.lyricFontSizeMode === "adaptive"
+                ? "作为基准大小 (以 1080p 高度为准)"
+                : "单位 px，最小 5，最大 40",
+            ),
             min: 5,
             max: 40,
             suffix: "px",
@@ -793,6 +815,13 @@ export const useLyricSettings = (): SettingConfig => {
             value: toRef(settingStore, "taskbarLyricShowWhenPaused"),
           },
           {
+            key: "taskbarLyricUseThemeColor",
+            label: "跟随封面颜色",
+            type: "switch",
+            description: "开启后任务栏歌词颜色将跟随歌曲封面，下一曲生效",
+            value: toRef(settingStore, "taskbarLyricUseThemeColor"),
+          },
+          {
             key: "taskbarLyricShowCover",
             label: "显示封面",
             type: "switch",
@@ -809,6 +838,32 @@ export const useLyricSettings = (): SettingConfig => {
             step: 1,
             value: toRef(settingStore, "taskbarLyricMaxWidth"),
             suffix: "%",
+          },
+          {
+            key: "taskbarLyricMinWidth",
+            label: "最小宽度",
+            type: "slider",
+            description: "任务栏歌词可用空间低于此比例时自动隐藏",
+            min: 0,
+            max: 50,
+            step: 1,
+            value: toRef(settingStore, "taskbarLyricMinWidth"),
+            suffix: "%",
+          },
+          {
+            key: "taskbarLyricMargin",
+            label: "歌词边距",
+            type: "input-number",
+            description: "任务栏歌词与相邻元素之间的间距",
+            min: 0,
+            max: 500,
+            step: 10,
+            suffix: "px",
+            value: computed({
+              get: () => settingStore.taskbarLyricMargin,
+              set: (v) => (settingStore.taskbarLyricMargin = v ?? 10),
+            }),
+            defaultValue: 10,
           },
           {
             key: "taskbarLyricAutoShrink",
@@ -873,6 +928,26 @@ export const useLyricSettings = (): SettingConfig => {
             max: 900,
             step: 100,
             value: toRef(settingStore, "taskbarLyricFontWeight"),
+          },
+        ],
+      },
+      {
+        title: "macOS 状态栏歌词",
+        show: isElectron && isMac,
+        items: [
+          {
+            key: "macStatusBarLyricEnabled",
+            label: "启用状态栏歌词",
+            type: "switch",
+            description: "开启后将在 macOS 状态栏显示歌词",
+            value: computed({
+              get: () => settingStore.macos.statusBarLyric.enabled,
+              set: (v) => {
+                settingStore.macos.statusBarLyric.enabled = v;
+                window.electron.ipcRenderer.send("macos-lyric:toggle", v);
+                window.$message.success(`${v ? "已开启" : "已关闭"}状态栏歌词`);
+              },
+            }),
           },
         ],
       },

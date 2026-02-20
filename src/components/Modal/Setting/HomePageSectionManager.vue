@@ -35,6 +35,7 @@
 <script setup lang="ts">
 import { useSettingStore } from "@/stores";
 import { useSortable } from "@vueuse/integrations/useSortable";
+import type { Options } from "sortablejs";
 import SvgIcon from "@/components/Global/SvgIcon.vue";
 
 const settingStore = useSettingStore();
@@ -53,7 +54,7 @@ useSortable(sortableRef, settingStore.homePageSections, {
   animation: 150,
   handle: ".n-icon",
   onEnd: updateSortOrder,
-});
+} as Options);
 
 onMounted(() => {
   // 初始化排序值

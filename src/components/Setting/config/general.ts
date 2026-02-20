@@ -1,19 +1,27 @@
-import { useDataStore, useMusicStore, useSettingStore } from "@/stores";
+import { useDataStore, useMusicStore, useSettingStore, useStatusStore } from "@/stores";
 import { usePlayerController } from "@/core/player/PlayerController";
 import { isElectron } from "@/utils/env";
 import { openExcludeComment } from "@/utils/modal";
 import { sendRegisterProtocol } from "@/utils/protocol";
 import { SettingConfig } from "@/types/settings";
-import { ref, computed, h } from "vue";
 import { NAlert } from "naive-ui";
 
 export const useGeneralSettings = (): SettingConfig => {
   const dataStore = useDataStore();
   const musicStore = useMusicStore();
   const settingStore = useSettingStore();
+  const statusStore = useStatusStore();
   const player = usePlayerController();
 
   const useOnlineService = ref(settingStore.useOnlineService);
+  const updateChannel = ref("stable");
+
+  // 初始化更新通道
+  if (isElectron) {
+    window.api.store.get("updateChannel").then((val) => {
+      if (val) updateChannel.value = val;
+    });
+  }
 
   const handleModeChange = (val: boolean) => {
     if (val) {
@@ -273,17 +281,22 @@ export const useGeneralSettings = (): SettingConfig => {
             key: "updateChannel",
             label: "更新通道",
             type: "select",
-            description: "切换更新通道（Nightly 通道可体验最新功能）",
+            description: "切换更新通道（测试版可体验最新功能，但不保证稳定性）",
             options: [
-              { label: "Stable (正式版)", value: "stable" },
-              { label: "Nightly (开发版)", value: "nightly" },
+              { label: "正式版", value: "stable" },
+              { label: "测试版", value: "nightly" },
             ],
             value: computed({
-              get: () => settingStore.updateChannel,
-              set: (v) => {
-                settingStore.updateChannel = v;
-                // 切换后立即检查更新
-                if (isElectron) window.electron.ipcRenderer.send("check-update", true, v);
+              get: () => updateChannel.value,
+              set: async (v) => {
+                updateChannel.value = v;
+                // 同步设置
+                if (isElectron) {
+                  await window.api.store.set("updateChannel", v);
+                  // 切换后立即检查更新
+                  statusStore.updateCheck = true;
+                  window.electron.ipcRenderer.send("check-update", true);
+                }
               },
             }),
           },
@@ -312,13 +325,18 @@ export const useGeneralSettings = (): SettingConfig => {
             }),
           },
           {
-            key: "clearSearchOnBlur",
-            label: "失焦自动清空搜索框",
-            type: "switch",
-            description: "搜索框失去焦点后自动清空内容",
+            key: "searchInputBehavior",
+            label: "搜索框行为",
+            type: "select",
+            description: "自定义搜索框的行为模式",
+            options: [
+              { label: "保留搜索词", value: "normal" },
+              { label: "失焦后清空", value: "clear" },
+              { label: "同步搜索词", value: "sync" },
+            ],
             value: computed({
-              get: () => settingStore.clearSearchOnBlur,
-              set: (v) => (settingStore.clearSearchOnBlur = v),
+              get: () => settingStore.searchInputBehavior,
+              set: (v) => (settingStore.searchInputBehavior = v),
             }),
           },
           {
@@ -338,6 +356,25 @@ export const useGeneralSettings = (): SettingConfig => {
             description: "配置排除评论的规则（关键词或正则表达式）",
             buttonLabel: "配置",
             action: openExcludeComment,
+          },
+        ],
+      },
+      {
+        title: "其他设置",
+        items: [
+          {
+            key: "shareUrlFormat",
+            label: "分享链接格式",
+            type: "select",
+            description: "自定义分享链接的生成格式",
+            options: [
+              { label: "网页版", value: "web" },
+              { label: "移动版", value: "mobile" },
+            ],
+            value: computed({
+              get: () => settingStore.shareUrlFormat,
+              set: (v) => (settingStore.shareUrlFormat = v),
+            }),
           },
         ],
       },

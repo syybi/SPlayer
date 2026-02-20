@@ -203,7 +203,7 @@ export const usePlaySettings = (): SettingConfig => {
     }
   };
 
-  // mpv 切换输出设备
+  // 切换输出设备
   const playDeviceChange = async (deviceId: string) => {
     // 找到对应的 label 用于显示
     const option = outputDevices.value.find((d) => d.value === deviceId);
@@ -213,6 +213,7 @@ export const usePlaySettings = (): SettingConfig => {
       try {
         const result = await window.electron.ipcRenderer.invoke("mpv-set-audio-device", deviceId);
         if (result.success) {
+          settingStore.playDevice = deviceId;
           window.$message.success(`已切换输出设备为 ${label}`);
         } else {
           window.$message.error(`切换输出设备失败: ${result.error}`);
@@ -224,6 +225,7 @@ export const usePlaySettings = (): SettingConfig => {
     }
 
     player.toggleOutputDevice(deviceId);
+    settingStore.playDevice = deviceId;
     window.$message.success(`已切换输出设备为 ${label}`);
   };
   // 监听播放引擎变化以刷新设备列表
@@ -396,6 +398,52 @@ export const usePlaySettings = (): SettingConfig => {
                 value: computed({
                   get: () => settingStore.songVolumeFadeTime,
                   set: (v) => (settingStore.songVolumeFadeTime = v),
+                }),
+              },
+            ],
+          },
+          {
+            key: "enableAutomix",
+            label: "启用自动混音",
+            type: "switch",
+            tags: [{ text: "Beta", type: "warning" }],
+            description: computed(() =>
+              settingStore.playbackEngine === "web-audio"
+                ? "是否启用自动混音功能"
+                : "自动混音功能仅在使用 Web Audio 引擎时可用",
+            ),
+            value: computed({
+              get: () => settingStore.enableAutomix,
+              set: (v) => {
+                if (v) {
+                  window.$dialog.warning({
+                    title: "启用自动混音 (Beta)",
+                    content:
+                      "可能出现兼容性问题，该功能在早期测试，遇到问题请反馈issue，不保证可以及时处理。效果可能因为歌曲而异，保守策略。",
+                    positiveText: "开启",
+                    negativeText: "取消",
+                    onPositiveClick: () => {
+                      settingStore.enableAutomix = true;
+                    },
+                  });
+                } else {
+                  settingStore.enableAutomix = v;
+                }
+              },
+            }),
+            disabled: computed(() => settingStore.playbackEngine !== "web-audio"),
+            children: [
+              {
+                key: "automixMaxAnalyzeTime",
+                label: "最大分析时间",
+                type: "input-number",
+                description: "单位秒，越长越精准但更耗时 (建议 60s)",
+                min: 5,
+                max: 300,
+                suffix: "s",
+                value: computed({
+                  get: () => settingStore.automixMaxAnalyzeTime,
+                  set: (v) => (settingStore.automixMaxAnalyzeTime = v),
                 }),
               },
             ],

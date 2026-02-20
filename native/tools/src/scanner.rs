@@ -33,6 +33,7 @@ pub struct MusicTrack {
     pub mtime: f64,
     pub size: i64,
     pub bitrate: f64,
+    pub track_number: Option<i32>,
 }
 
 struct TrackSnapshot {
@@ -233,6 +234,7 @@ fn spawn_reporter(
     })
 }
 
+#[allow(clippy::cast_possible_wrap)]
 fn process_single_track(
     path_buf: &Path,
     snapshot: &HashMap<String, TrackSnapshot>,
@@ -290,6 +292,7 @@ fn process_single_track(
 
     let artist = tag.artist().as_deref().unwrap_or("未知艺术家").to_string();
     let album = tag.album().as_deref().unwrap_or("未知专辑").to_string();
+    let track_number = tag.track().map(|t| t as i32);
 
     let id = get_file_id(&path_str);
     let cover_path = process_cover(&tagged_file, &id, cover_dir_path);
@@ -307,6 +310,7 @@ fn process_single_track(
         mtime,
         size,
         bitrate: f64::from(bitrate_kbps) * 1000.0,
+        track_number,
     })
 }
 

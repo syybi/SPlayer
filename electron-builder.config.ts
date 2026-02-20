@@ -103,10 +103,16 @@ const config: Configuration = {
     executableName: "SPlayer",
     // 应用程序的图标文件路径
     icon: "public/icons/icon.icns",
-    // 权限继承的文件路径
-    entitlementsInherit: "build/entitlements.mac.plist",
     // macOS 平台全局文件名模板
     artifactName: "${productName}-${version}-${arch}.${ext}",
+    // 不签名
+    identity: null,
+    hardenedRuntime: false,
+    // 是否启用应用程序的 Notarization（苹果的安全审核）
+    notarize: false,
+    gatekeeperAssess: false,
+    darkModeSupport: true,
+    category: "public.app-category.music",
     // 扩展信息，如权限描述
     extendInfo: {
       NSCameraUsageDescription: "Application requests access to the device's camera.",
@@ -123,10 +129,6 @@ const config: Configuration = {
         },
       ],
     },
-    // 是否启用应用程序的 Notarization（苹果的安全审核）
-    notarize: false,
-    darkModeSupport: true,
-    category: "public.app-category.music",
     target: [
       // DMG 安装版
       {

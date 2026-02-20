@@ -2,17 +2,13 @@
   <div
     class="taskbar-lyric"
     :class="{ dark: state.isDark, 'layout-reverse': !state.isCenter }"
-    :style="{
-      opacity: isVisible ? state.opacity : 0,
-      filter: state.opacity === 0 || !isVisible ? 'blur(10px)' : 'blur(0px)',
-      pointerEvents: isVisible ? 'auto' : 'none',
-    }"
+    :style="rootStyle"
     @mouseenter="isHovering = true"
     @mouseleave="isHovering = false"
   >
-    <div class="cover-wrapper" v-if="state.cover && settingStore.taskbarLyricShowCover">
+    <div class="cover-wrapper" v-if="coverSrc && settingStore.taskbarLyricShowCover">
       <Transition name="cross-fade">
-        <img :key="state.cover" :src="state.cover" class="cover" alt="cover" />
+        <img :key="coverSrc" :src="coverSrc" class="cover" alt="cover" @error="onCoverError" />
       </Transition>
     </div>
 
@@ -74,18 +70,26 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  TaskbarLyricsPayload,
-  TaskbarMetadataPayload,
-  TaskbarProgressPayload,
-  TaskbarStatePayload,
-} from "@/core/player/PlayerIpc";
 import { useSettingStore } from "@/stores";
+import {
+  TASKBAR_IPC_CHANNELS,
+  type SyncStatePayload,
+  type SyncTickPayload,
+  type TaskbarConfig,
+} from "@/types/shared";
 import type { LyricLine } from "@applemusic-like-lyrics/lyric";
-import { type CSSProperties } from "vue";
+import type { CSSProperties } from "vue";
 import LyricScroll from "./LyricScroll.vue";
 
 const settingStore = useSettingStore();
+
+/**
+ * 只有当 IPC 时间与本地时间误差超过 250ms 时，才同步 IPC 的时间
+ *
+ * IPC 传来的时间有约 50ms 的延迟，可能导致 rAF 的时间抢跑了 50ms
+ * 显示到了下一行歌词，而 IPC 传的时间又把歌词拉回到上一句
+ */
+const SYNC_THRESHOLD_MS = 250;
 
 interface DisplayItem {
   key: string | number;
@@ -98,13 +102,16 @@ const state = reactive({
   title: "",
   artist: "",
   cover: "",
-  opacity: 1,
+
   isPlaying: false,
   currentTime: 0,
   duration: 0,
   offset: 0,
+
   lyrics: [] as LyricLine[],
+  lyricType: "line" as "line" | "word",
   lyricIndex: -1,
+
   isDark: true,
   /**
    * 当前任务栏的对齐方式
@@ -112,11 +119,42 @@ const state = reactive({
    * 只在 Win11 上可能会为 true，Win10 上总为 false
    */
   isCenter: false,
-  lyricType: "line" as "line" | "word",
-  showWhenPaused: true,
+  themeColor: null as { light: string; dark: string } | null,
+  opacity: 1,
+  blurVal: 0,
 });
 
-const isVisible = computed(() => state.isPlaying || state.showWhenPaused);
+// 默认封面图片
+const DEFAULT_COVER = "/images/song.jpg?asset";
+
+// 封面加载失败标记
+const coverLoadFailed = ref(false);
+
+// 计算实际显示的封面 URL
+const coverSrc = computed(() => {
+  if (coverLoadFailed.value || !state.cover) {
+    return DEFAULT_COVER;
+  }
+  return state.cover;
+});
+
+// 封面加载失败处理
+const onCoverError = () => {
+  coverLoadFailed.value = true;
+};
+
+const rootStyle = computed<CSSProperties>(() => {
+  const style: CSSProperties = {
+    "--dynamic-opacity": state.opacity,
+    "--dynamic-blur": `${state.blurVal}px`,
+  };
+
+  if (state.themeColor) {
+    style.color = state.isDark ? state.themeColor.dark : state.themeColor.light;
+  }
+
+  return style;
+});
 
 const lyricFontFamily = computed(() => {
   const font =
@@ -198,9 +236,9 @@ const displayItems = computed<DisplayItem[]>(() => {
       .trim() || "";
 
   let subText = "";
-  if (currentLine.translatedLyric) {
+  if (settingStore.showTran && currentLine.translatedLyric) {
     subText = currentLine.translatedLyric;
-  } else if (currentLine.romanLyric) {
+  } else if (settingStore.showRoma && currentLine.romanLyric) {
     subText = currentLine.romanLyric;
   }
 
@@ -277,6 +315,7 @@ const handleLyricResize = (key: string | number, width: number) => {
 const calculateAndResizeWindow = () => {
   const ipc = window.electron?.ipcRenderer;
   if (!ipc) return;
+  if (isHovering.value) return;
 
   const activeKeys = new Set(itemsToRender.value.map((i) => i.key));
   let maxTextWidth = 0;
@@ -292,15 +331,17 @@ const calculateAndResizeWindow = () => {
   const BASE_WIDTH = 200; // Cover, controls, padding, etc.
   const requiredWidth = BASE_WIDTH + maxTextWidth;
 
-  if (requiredWidth > lastRequestedWidth.value) {
-    lastRequestedWidth.value = requiredWidth;
-    ipc.send("taskbar:set-width", requiredWidth);
-  } else if (requiredWidth < lastRequestedWidth.value) {
-    if (isHovering.value) return;
+  if (requiredWidth !== lastRequestedWidth.value) {
     lastRequestedWidth.value = requiredWidth;
     ipc.send("taskbar:set-width", requiredWidth);
   }
 };
+
+watch(isHovering, (newVal) => {
+  if (!newVal) {
+    calculateAndResizeWindow();
+  }
+});
 
 watch(
   () => state.title,
@@ -314,10 +355,6 @@ const currentLyricText = computed(() => {
   if (!state.lyrics.length || state.lyricIndex < 0) return "";
   return state.lyrics[state.lyricIndex]?.words?.map((w) => w.word).join("") || "";
 });
-
-const contentStyle = computed<CSSProperties>(() => ({
-  textAlign: state.isCenter ? "left" : "right",
-}));
 
 const findLyricIndex = (currentTime: number, lyrics: LyricLine[], offset: number = 0): number => {
   const targetTime = currentTime - offset;
@@ -392,46 +429,140 @@ watch(
   },
 );
 
+const contentStyle = computed<CSSProperties>(() => ({
+  textAlign: state.isCenter ? "left" : "right",
+}));
+
+const configMap: Partial<Record<keyof TaskbarConfig, keyof typeof settingStore>> = {
+  showCover: "taskbarLyricShowCover",
+  animationMode: "taskbarLyricAnimationMode",
+  singleLineMode: "taskbarLyricSingleLineMode",
+  fontFamily: "LyricFont",
+  globalFont: "globalFont",
+  fontWeight: "taskbarLyricFontWeight",
+  showTranslation: "showTran",
+  showRomaji: "showRoma",
+  showWhenPaused: "taskbarLyricShowWhenPaused",
+};
+
+const applyConfigToStore = (config: Partial<TaskbarConfig>) => {
+  const patches: Record<string, unknown> = {};
+
+  (Object.keys(config) as Array<keyof TaskbarConfig>).forEach((key) => {
+    const storeKey = configMap[key];
+    const value = config[key];
+
+    if (storeKey && value !== undefined) {
+      patches[storeKey] = value;
+    }
+  });
+
+  if (Object.keys(patches).length > 0) {
+    settingStore.$patch(patches);
+  }
+
+  if (config.themeMode !== undefined) {
+    state.isDark =
+      config.themeMode === "auto"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+        : config.themeMode === "dark";
+  }
+};
+
 onMounted(() => {
   const ipc = window.electron?.ipcRenderer;
   if (!ipc) return;
 
-  ipc.on("taskbar:update-metadata", (_, { title, artist, cover }: TaskbarMetadataPayload) => {
-    if (title !== undefined) state.title = title;
-    if (artist !== undefined) state.artist = artist;
-    state.cover = cover || "";
-    state.lyricIndex = -1;
-    jumpCount.value = 0;
-    state.currentTime = 0;
+  ipc.on(TASKBAR_IPC_CHANNELS.SYNC_STATE, (_, payload: SyncStatePayload) => {
+    switch (payload.type) {
+      case "full-hydration": {
+        const { track, lyrics, playback, config, themeColor } = payload.data;
+        state.title = track.title;
+        state.artist = track.artist;
+        state.cover = track.cover;
+        state.duration = playback.tick[1] || 0;
+
+        state.lyrics = lyrics.lines;
+        state.lyricType = lyrics.type;
+        state.lyricIndex = -1;
+        jumpCount.value = 0;
+
+        state.isPlaying = playback.isPlaying;
+        state.currentTime = playback.tick[0];
+        state.offset = playback.tick[2] || 0;
+
+        applyConfigToStore(config);
+        state.themeColor = themeColor;
+
+        lastTimestamp = performance.now();
+        state.isPlaying ? startLoop() : stopLoop();
+        updateLyric();
+        break;
+      }
+
+      case "track-change": {
+        const data = payload.data;
+
+        state.title = data.title;
+        state.artist = data.artist;
+        state.cover = data.cover || "";
+
+        state.currentTime = 0;
+        jumpCount.value = 0;
+        coverLoadFailed.value = false;
+        break;
+      }
+
+      case "lyrics-loaded": {
+        const data = payload.data;
+
+        state.lyrics = data.lines;
+        state.lyricType = data.type;
+        state.lyricIndex = -1;
+        state.currentTime = 0;
+        jumpCount.value = 0;
+        coverLoadFailed.value = false;
+
+        updateLyric();
+        break;
+      }
+
+      case "playback-state": {
+        state.isPlaying = payload.data.isPlaying;
+        state.isPlaying ? startLoop() : stopLoop();
+        break;
+      }
+
+      case "config-update": {
+        applyConfigToStore(payload.data);
+        break;
+      }
+
+      case "theme-color": {
+        state.themeColor = payload.data;
+        break;
+      }
+
+      case "system-theme": {
+        state.isDark = payload.data.isDark;
+        break;
+      }
+    }
+  });
+
+  ipc.on(TASKBAR_IPC_CHANNELS.SYNC_TICK, (_, [currentTime, duration, offset]: SyncTickPayload) => {
+    state.duration = duration;
+    state.offset = offset || 0;
+
+    const diff = Math.abs(currentTime - state.currentTime);
+
+    if (diff <= SYNC_THRESHOLD_MS && state.isPlaying) {
+      return;
+    }
+
+    state.currentTime = currentTime;
     lastTimestamp = performance.now();
-  });
-
-  ipc.on("taskbar:update-lyrics", (_, { lines, type }: TaskbarLyricsPayload) => {
-    if (!lines) return;
-    state.lyrics = lines;
-    state.lyricType = type || "line";
-    state.lyricIndex = -1;
-    jumpCount.value = 0;
-  });
-
-  ipc.on(
-    "taskbar:update-progress",
-    (_, { currentTime, duration, offset }: TaskbarProgressPayload) => {
-      state.currentTime = currentTime;
-      state.duration = duration;
-      state.offset = offset || 0;
-      lastTimestamp = performance.now();
-      updateLyric();
-    },
-  );
-
-  ipc.on("taskbar:update-state", (_, { isPlaying }: TaskbarStatePayload) => {
-    state.isPlaying = isPlaying;
-    isPlaying ? startLoop() : stopLoop();
-  });
-
-  ipc.on("taskbar:update-theme", (_, { isDark }: { isDark: boolean }) => {
-    state.isDark = isDark;
+    updateLyric();
   });
 
   ipc.on("taskbar:update-layout", (_, { isCenter }: { isCenter: boolean }) => {
@@ -440,36 +571,21 @@ onMounted(() => {
 
   ipc.on("taskbar:fade-out", () => {
     state.opacity = 0;
+    state.blurVal = 12;
+
+    setTimeout(() => {
+      ipc.send("taskbar:fade-done");
+    }, 500);
   });
+
   ipc.on("taskbar:fade-in", () => {
-    state.opacity = 1;
+    setTimeout(() => {
+      state.opacity = 1;
+      state.blurVal = 0;
+    }, 200);
   });
 
-  ipc.on("taskbar:update-settings", (_event, settings: any) => {
-    if (settings.showCover !== undefined) {
-      settingStore.taskbarLyricShowCover = settings.showCover;
-    }
-    if (settings.animationMode !== undefined) {
-      settingStore.taskbarLyricAnimationMode = settings.animationMode;
-    }
-    if (settings.singleLineMode !== undefined) {
-      settingStore.taskbarLyricSingleLineMode = settings.singleLineMode;
-    }
-    if (settings.lyricFont !== undefined) {
-      settingStore.LyricFont = settings.lyricFont;
-    }
-    if (settings.globalFont !== undefined) {
-      settingStore.globalFont = settings.globalFont;
-    }
-    if (settings.fontWeight !== undefined) {
-      settingStore.taskbarLyricFontWeight = settings.fontWeight;
-    }
-    if (settings.showWhenPaused !== undefined) {
-      state.showWhenPaused = settings.showWhenPaused;
-    }
-  });
-
-  ipc.send("taskbar:request-data");
+  ipc.send(TASKBAR_IPC_CHANNELS.REQUEST_DATA);
 });
 
 onUnmounted(() => {
@@ -492,6 +608,8 @@ $radius: 4px;
   align-items: center;
   justify-content: flex-start;
   overflow: hidden;
+  opacity: var(--dynamic-opacity, 1);
+  filter: blur(var(--dynamic-blur, 0px));
 
   color: $base-color;
   border-radius: $radius;
@@ -502,8 +620,8 @@ $radius: 4px;
   will-change: opacity, filter;
   transition:
     background-color 0.15s,
-    opacity 0.3s ease,
-    filter 0.3s ease;
+    opacity 0.4s ease,
+    filter 0.4s ease;
 
   --lyric-ease: cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -582,6 +700,7 @@ $radius: 4px;
   align-items: center;
   justify-content: center;
   height: 100%;
+  max-width: 120px;
   gap: 6px;
   overflow: hidden;
   z-index: 10;

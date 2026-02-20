@@ -6,7 +6,7 @@
     :style="{ '--gradient-percent': settingStore.playerFullscreenGradient + '%' }"
   >
     <s-image
-      :src="musicStore.getSongCover('xl')"
+      :src="getCoverUrl('xl')"
       :alt="musicStore.playSong.name"
       :title="musicStore.playSong.name"
       :lazy="false"
@@ -28,8 +28,8 @@
     />
     <!-- 专辑图片 -->
     <s-image
-      :key="musicStore.getSongCover()"
-      :src="musicStore.getSongCover('l')"
+      :key="getCoverUrl('l')"
+      :src="getCoverUrl('l')"
       :observe-visibility="false"
       object-fit="cover"
       class="cover-img"
@@ -53,8 +53,10 @@
 <script setup lang="ts">
 import { songDynamicCover } from "@/api/song";
 import { useMobile } from "@/composables/useMobile";
+import { useBlobURLManager } from "@/core/resource/BlobURLManager";
 import { useSettingStore, useStatusStore, useMusicStore } from "@/stores";
 import { isLogin } from "@/utils/auth";
+import { isElectron } from "@/utils/env";
 import { isEmpty } from "lodash-es";
 
 const musicStore = useMusicStore();
@@ -63,12 +65,20 @@ const settingStore = useSettingStore();
 
 const { isTablet } = useMobile();
 
+// 本地歌曲高清封面（Data URL）
+const localCoverDataUrl = ref<string>("");
+
 // 动态封面
 const dynamicCover = ref<string>("");
 const dynamicCoverLoaded = ref<boolean>(false);
 
 // 视频元素
 const videoRef = ref<HTMLVideoElement | null>(null);
+
+// 清理本地封面资源
+const cleanupLocalCover = () => {
+  localCoverDataUrl.value = "";
+};
 
 // 清理动态封面资源
 const cleanupDynamicCover = () => {
@@ -90,6 +100,44 @@ const { start: dynamicCoverStart, stop: dynamicCoverStop } = useTimeoutFn(
   2000,
   { immediate: false },
 );
+
+// 获取本地歌曲高清封面
+const getLocalCover = async () => {
+  if (!isElectron || !musicStore.playSong.path || musicStore.playSong.type === "streaming") {
+    cleanupLocalCover();
+    return;
+  }
+  // 先检查blob中是否存在
+  const blobURLManager = useBlobURLManager();
+  const blobURL = blobURLManager.getBlobURL(musicStore.playSong.path);
+  if (blobURL) {
+    localCoverDataUrl.value = blobURL;
+    return;
+  }
+  try {
+    const coverData = await window.electron.ipcRenderer.invoke(
+      "get-music-cover",
+      musicStore.playSong.path,
+    );
+    if (coverData) {
+      // 使用 Data URL，确保跨窗口可用
+      const blob = new Blob([coverData.data], { type: coverData.format });
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.onabort = reject;
+        reader.readAsDataURL(blob);
+      });
+      localCoverDataUrl.value = dataUrl;
+    } else {
+      localCoverDataUrl.value = "";
+    }
+  } catch (error) {
+    console.error("获取本地封面失败:", error);
+    localCoverDataUrl.value = "";
+  }
+};
 
 // 获取动态封面
 const getDynamicCover = async () => {
@@ -117,18 +165,38 @@ const dynamicCoverEnded = () => {
   dynamicCoverStart();
 };
 
+// 获取封面 URL
+const getCoverUrl = (size: "s" | "m" | "l" | "xl" = "l") => {
+  if (localCoverDataUrl.value) {
+    return localCoverDataUrl.value;
+  }
+  return musicStore.getSongCover(size);
+};
+
 watch(
   () => [musicStore.playSong.id, settingStore.dynamicCover, settingStore.playerType],
   () => getDynamicCover(),
 );
 
-onMounted(getDynamicCover);
+// 监听歌曲切换，获取/清理本地封面
+watch(
+  () => musicStore.playSong.path,
+  () => getLocalCover(),
+  { immediate: true },
+);
+
+onMounted(() => {
+  getDynamicCover();
+  getLocalCover();
+});
 
 onBeforeUnmount(() => {
   // 停止定时器
   dynamicCoverStop();
   // 清理动态封面资源
   cleanupDynamicCover();
+  // 清理本地封面资源
+  cleanupLocalCover();
 });
 </script>
 
@@ -171,14 +239,15 @@ onBeforeUnmount(() => {
   }
   &.record {
     position: relative;
-    width: 50vh;
+    max-width: 46vh;
+    margin-bottom: 4%;
     .pointer {
       position: absolute;
-      width: 14vh;
-      left: calc(50% - 1.8vh);
-      top: -11.5vh;
+      width: 30%;
+      left: 46%;
+      top: -22%;
       transform: rotate(-20deg);
-      transform-origin: 1.8vh 1.8vh;
+      transform-origin: 10% 10%;
       z-index: 2;
       transition: transform 0.3s;
     }
@@ -254,9 +323,11 @@ onBeforeUnmount(() => {
           #555
         );
       background-clip: content-box;
-      width: 46vh;
-      height: 46vh;
-      min-width: 46vh;
+      // width: 46vh;
+      // height: 46vh;
+      // min-width: 46vh;
+      width: 100%;
+      height: 100%;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -288,7 +359,7 @@ onBeforeUnmount(() => {
   }
   &.playing {
     .pointer {
-      transform: rotate(0);
+      transform: rotate(-8deg);
     }
     .cover-img {
       animation-play-state: running;

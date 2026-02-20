@@ -1,40 +1,181 @@
-import type { SongMetadata } from "@native/tools";
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import FastGlob from "fast-glob";
-import type { Options as GlobOptions } from "fast-glob/out/settings";
-import { parseFile } from "music-metadata";
-import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
-import pLimit from "p-limit";
-import type { MusicTrack } from "../database/LocalMusicDB";
+import { app, dialog, ipcMain, shell } from "electron";
+import { access, mkdir, unlink, writeFile, stat } from "node:fs/promises";
+import { isAbsolute, join, normalize, relative, resolve } from "node:path";
+import { Worker } from "node:worker_threads";
 import { ipcLog } from "../logger";
 import { LocalMusicService } from "../services/LocalMusicService";
+import { DownloadService } from "../services/DownloadService";
+import { MusicMetadataService } from "../services/MusicMetadataService";
 import { useStore } from "../store";
-import { getFileID, getFileMD5, metaDataLyricsArrayToLrc } from "../utils/helper";
-import { loadNativeModule } from "../utils/native-loader";
+import { chunkArray } from "../utils/helper";
+import { processMusicList } from "../utils/format";
 
-type toolModule = typeof import("@native/tools");
-const tools: toolModule = loadNativeModule("tools.node", "tools");
+/** 本地音乐服务 */
+const localMusicService = new LocalMusicService();
+/** 下载服务 */
+const downloadService = new DownloadService();
+/** 音乐元数据服务 */
+const musicMetadataService = new MusicMetadataService();
+
+const analysisInFlight = new Map<string, Promise<unknown | null>>();
+
+const normalizeAnalysisKey = (filePath: string) => {
+  const p = normalize(resolve(filePath));
+  return process.platform === "win32" ? p.toLowerCase() : p;
+};
+
+const resolveToolsNativeModulePath = () => {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, "native", "tools.node");
+  }
+  return join(process.cwd(), "native", "tools", "tools.node");
+};
+
+const runToolsJobInWorker = async (payload: Record<string, unknown>) => {
+  const worker = new Worker(new URL("./workers/audio-analysis.worker.js", import.meta.url), {});
+
+  try {
+    const jobType = typeof payload.type === "string" ? payload.type : "unknown";
+    const nativeModulePath = resolveToolsNativeModulePath();
+    await access(nativeModulePath).catch(() => {
+      ipcLog.warn(`[AudioAnalysis] tools.node 不存在: ${nativeModulePath}`);
+      throw new Error("TOOLS_NATIVE_MODULE_MISSING");
+    });
+    if (
+      jobType === "analyzeHead" ||
+      jobType === "suggestTransition" ||
+      jobType === "suggestLongMix"
+    ) {
+      ipcLog.info(`[AudioAnalysis] Worker 启动: ${jobType}`);
+    }
+    const result = await new Promise<unknown | null>((resolvePromise) => {
+      const cleanup = () => {
+        worker.removeAllListeners("message");
+        worker.removeAllListeners("error");
+        worker.removeAllListeners("exit");
+        worker.terminate().catch(() => {});
+      };
+
+      worker.once(
+        "message",
+        (resp: { ok: true; result?: unknown } | { ok: false; error?: string }) => {
+          cleanup();
+          if (resp && resp.ok) {
+            resolvePromise(resp.result ?? null);
+            return;
+          }
+          if (resp && !resp.ok && resp.error) {
+            ipcLog.warn(`[AudioAnalysis] Worker 分析失败: ${resp.error}`);
+          }
+          resolvePromise(null);
+        },
+      );
+
+      worker.once("error", (err) => {
+        cleanup();
+        const message = err instanceof Error ? err.message : String(err);
+        ipcLog.warn(`[AudioAnalysis] Worker 线程错误: ${message}`);
+        resolvePromise(null);
+      });
+
+      worker.once("exit", (code) => {
+        cleanup();
+        if (code !== 0) {
+          ipcLog.warn(`[AudioAnalysis] Worker 异常退出: code=${code}`);
+        }
+        resolvePromise(null);
+      });
+
+      worker.postMessage({ ...payload, nativeModulePath });
+    });
+
+    if (
+      jobType === "analyzeHead" ||
+      jobType === "suggestTransition" ||
+      jobType === "suggestLongMix"
+    ) {
+      ipcLog.info(`[AudioAnalysis] Worker 完成: ${jobType} (${result ? "ok" : "null"})`);
+    }
+    return result;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    ipcLog.warn(`[AudioAnalysis] 启动分析失败: ${message}`);
+    worker.terminate().catch(() => {});
+    return null;
+  }
+};
+
+const runAnalysisInWorker = async (filePath: string, maxTime: number) => {
+  return await runToolsJobInWorker({ type: "analyze", filePath, maxTime });
+};
+
+const runHeadAnalysisInWorker = async (filePath: string, maxTime: number) => {
+  return await runToolsJobInWorker({ type: "analyzeHead", filePath, maxTime });
+};
+
+const runSuggestTransitionInWorker = async (currentPath: string, nextPath: string) => {
+  return await runToolsJobInWorker({ type: "suggestTransition", currentPath, nextPath });
+};
+
+const runSuggestLongMixInWorker = async (currentPath: string, nextPath: string) => {
+  return await runToolsJobInWorker({ type: "suggestLongMix", currentPath, nextPath });
+};
+
+/** 获取封面目录路径 */
+const getCoverDir = (): string => {
+  const store = useStore();
+  const localCachePath = join(store.get("cachePath"), "local-data");
+  return join(localCachePath, "covers");
+};
 
 /**
- * 文件相关 IPC
+ * 处理本地音乐同步（批量流式传输）
+ * @param event IPC 调用事件
+ * @param dirs 需要同步的目录路径数组
+ */
+const handleLocalMusicSync = async (
+  event: Electron.IpcMainInvokeEvent,
+  dirs: string[],
+): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const coverDir = getCoverDir();
+    // 刷新本地音乐库
+    const allTracks = await localMusicService.refreshLibrary(
+      dirs,
+      (current, total) => {
+        event.sender.send("music-sync-progress", { current, total });
+      },
+      () => {},
+    );
+    // 处理音乐封面路径
+    const finalTracks = processMusicList(allTracks, coverDir);
+    // 分块发送
+    const CHUNK_SIZE = 1000;
+    for (const chunk of chunkArray(finalTracks, CHUNK_SIZE)) {
+      event.sender.send("music-sync-tracks-batch", chunk);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    // 完成信号
+    event.sender.send("music-sync-complete", {
+      success: true,
+    });
+    return { success: true };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    // 如果正在扫描中
+    if (errorMessage === "SCAN_IN_PROGRESS") {
+      return { success: false, message: "扫描正在进行中，请稍候" };
+    }
+    // 错误信号
+    event.sender.send("music-sync-complete", { success: false, message: errorMessage });
+    return { success: false, message: errorMessage };
+  }
+};
+
+/**
+ * 初始化文件相关 IPC
  */
 const initFileIpc = (): void => {
-  /** 本地音乐服务 */
-  const localMusicService = new LocalMusicService();
-
-  // Store active download tasks: ID -> DownloadTask instance
-  const activeDownloads = new Map<number, any>();
-
-  /**
-   * 获取全局搜索配置
-   * @param cwd 当前工作目录
-   */
-  const globOpt = (cwd?: string): GlobOptions => ({
-    cwd,
-    caseSensitiveMatch: false,
-  });
-
   // 检查文件是否存在
   ipcMain.handle("file-exists", async (_, path: string) => {
     try {
@@ -48,12 +189,21 @@ const initFileIpc = (): void => {
   // 保存文件
   ipcMain.handle(
     "save-file",
-    async (_, args: { path: string; content: string; encoding?: BufferEncoding }) => {
+    async (
+      _,
+      args: {
+        targetPath: string;
+        fileName: string;
+        ext: string;
+        content: string;
+        encoding?: BufferEncoding;
+      },
+    ) => {
       try {
-        const { path, content, encoding } = args;
-        const dir = dirname(path);
-        await mkdir(dir, { recursive: true });
-        await writeFile(path, content, { encoding: encoding || "utf-8" });
+        const { targetPath, fileName, ext, content, encoding } = args;
+        const joinedPath = join(targetPath, `${fileName}.${ext}`);
+        await mkdir(targetPath, { recursive: true });
+        await writeFile(joinedPath, content, { encoding: encoding || "utf-8" });
         return { success: true };
       } catch (err) {
         ipcLog.error("Failed to save file:", err);
@@ -71,377 +221,45 @@ const initFileIpc = (): void => {
   );
 
   // 本地音乐同步（批量流式传输）
-  ipcMain.handle("local-music-sync", async (event, dirs: string[]) => {
+  ipcMain.handle("local-music-sync", handleLocalMusicSync);
+
+  // 获取已下载音乐
+  ipcMain.handle("get-downloaded-songs", async (_event, dirPath: string) => {
     try {
-      // 获取封面目录路径
-      const store = useStore();
-      const localCachePath = join(store.get("cachePath"), "local-data");
-      const coverDir = join(localCachePath, "covers");
-
-      const processTracksCover = (tracks: MusicTrack[]) => {
-        return tracks.map((track) => {
-          let coverPath: string | undefined;
-          if (track.cover) {
-            const fullPath = join(coverDir, track.cover);
-            coverPath = `file://${fullPath.replace(/\\/g, "/")}`;
-          }
-          return { ...track, cover: coverPath };
-        });
-      };
-
-      const allTracks = await localMusicService.refreshLibrary(
-        dirs,
-        (current, total) => {
-          event.sender.send("music-sync-progress", { current, total });
-        },
-        () => {},
-      );
-
-      const finalTracks = processTracksCover(allTracks);
-      const CHUNK_SIZE = 1000;
-
-      for (const chunk of chunkArray(finalTracks, CHUNK_SIZE)) {
-        event.sender.send("music-sync-tracks-batch", chunk);
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-
-      event.sender.send("music-sync-complete", {
-        success: true,
-      });
-
-      return { success: true };
+      const coverDir = getCoverDir();
+      // 扫描指定目录
+      const tracks = await localMusicService.scanDirectory(dirPath);
+      return processMusicList(tracks, coverDir);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      // 如果正在扫描中
-      if (errorMessage === "SCAN_IN_PROGRESS") {
-        return { success: false, message: "扫描正在进行中，请稍候" };
-      }
-      // 错误信号
-      event.sender.send("music-sync-complete", { success: false, message: errorMessage });
-      return { success: false, message: errorMessage };
-    }
-  });
-
-  // 遍历音乐文件
-  ipcMain.handle("get-music-files", async (_, dirPath: string) => {
-    try {
-      // 校验路径有效性
-      if (!dirPath || dirPath.trim() === "") {
-        ipcLog.warn("⚠️ Empty directory path provided, skipping");
-        return [];
-      }
-      // 规范化路径
-      const filePath = resolve(dirPath).replace(/\\/g, "/");
-      // 检查目录是否存在
-      try {
-        await access(filePath);
-      } catch {
-        ipcLog.warn(`⚠️ Directory not accessible: ${filePath}`);
-        return [];
-      }
-      console.info(`📂 Fetching music files from: ${filePath}`);
-      // 音乐文件扩展名
-      const musicExtensions = [
-        "mp3",
-        "wav",
-        "flac",
-        "aac",
-        "webm",
-        "m4a",
-        "ogg",
-        "aiff",
-        "aif",
-        "aifc",
-      ];
-      // 查找指定目录下的所有音乐文件
-      const musicFiles = await FastGlob(`**/*.{${musicExtensions.join(",")}}`, globOpt(filePath));
-
-      // 限制并发数
-      const limit = pLimit(10);
-
-      // 解析元信息（使用 allSettled 防止单个文件失败影响整体）
-      const metadataPromises = musicFiles.map((file) =>
-        limit(async () => {
-          const fullPath = join(dirPath, file);
-          try {
-            // 处理元信息 (跳过封面解析以提升速度)
-            const { common, format } = await parseFile(fullPath, { skipCovers: true });
-            // 获取文件大小
-            const { size } = await stat(fullPath);
-            const ext = extname(fullPath);
-
-            return {
-              id: getFileID(fullPath),
-              name: common.title || basename(fullPath, ext),
-              artists: common.artists?.[0] || common.artist,
-              album: common.album || "",
-              alia: common.comment?.[0]?.text || "",
-              duration: (format?.duration ?? 0) * 1000,
-              size: (size / (1024 * 1024)).toFixed(2),
-              path: fullPath,
-              quality: format.bitrate ?? 0,
-              replayGain: {
-                trackGain: common.replaygain_track_gain?.ratio,
-                trackPeak: common.replaygain_track_peak?.ratio,
-                albumGain: common.replaygain_album_gain?.ratio,
-                albumPeak: common.replaygain_album_peak?.ratio,
-              },
-            };
-          } catch (err) {
-            ipcLog.warn(`⚠️ Failed to parse file: ${fullPath}`, err);
-            return null;
-          }
-        }),
-      );
-      const metadataResults = await Promise.all(metadataPromises);
-      // 过滤掉解析失败的文件
-      return metadataResults.filter((item) => item !== null);
-    } catch (error) {
-      ipcLog.error("❌ Error fetching music metadata:", error);
+      console.error("Failed to get downloaded songs:", err);
       return [];
     }
   });
 
   // 获取音乐元信息
   ipcMain.handle("get-music-metadata", async (_, path: string) => {
-    try {
-      const filePath = resolve(path).replace(/\\/g, "/");
-      const { common, format } = await parseFile(filePath);
-      return {
-        // 文件名称
-        fileName: basename(filePath),
-        // 文件大小
-        fileSize: (await stat(filePath)).size / (1024 * 1024),
-        // 元信息
-        common,
-        // 歌词
-        lyric:
-          metaDataLyricsArrayToLrc(common?.lyrics?.[0]?.syncText || []) ||
-          common?.lyrics?.[0]?.text ||
-          "",
-        // 音质信息
-        format,
-        // md5
-        md5: await getFileMD5(filePath),
-        replayGain: {
-          trackGain: common.replaygain_track_gain?.ratio,
-          trackPeak: common.replaygain_track_peak?.ratio,
-          albumGain: common.replaygain_album_gain?.ratio,
-          albumPeak: common.replaygain_album_peak?.ratio,
-        },
-      };
-    } catch (error) {
-      ipcLog.error("❌ Error fetching music metadata:", error);
-      throw error;
-    }
+    return musicMetadataService.getMetadata(path);
   });
 
   // 修改音乐元信息
-  ipcMain.handle("set-music-metadata", async (_, path: string, metadata: any) => {
-    try {
-      const {
-        name,
-        artist,
-        album,
-        alia,
-        lyric,
-        cover,
-        albumArtist,
-        genre,
-        year,
-        trackNumber,
-        discNumber,
-      } = metadata;
-      // 规范化路径
-      const songPath = resolve(path);
-      const coverPath = cover ? resolve(cover) : undefined;
-
-      const meta: SongMetadata = {
-        title: name || "未知曲目",
-        artist: artist || "未知艺术家",
-        album: album || "未知专辑",
-        lyric: lyric || "",
-        description: alia || "",
-        albumArtist: albumArtist,
-        genre: genre,
-        year: year,
-        trackNumber: trackNumber,
-        discNumber: discNumber,
-      };
-
-      if (!tools) {
-        throw new Error("Native tools not loaded");
-      }
-
-      await tools.writeMusicMetadata(songPath, meta, coverPath);
-      return true;
-    } catch (error) {
-      ipcLog.error("❌ Error setting music metadata:", error);
-      throw error;
-    }
+  ipcMain.handle("set-music-metadata", async (_, path: string, metadata) => {
+    return musicMetadataService.setMetadata(path, metadata);
   });
 
   // 获取音乐歌词
-  ipcMain.handle(
-    "get-music-lyric",
-    async (
-      _,
-      musicPath: string, // 参数名改为 musicPath 以示区分
-    ): Promise<{
-      lyric: string;
-      format: "lrc" | "ttml" | "yrc";
-      external?: { lyric: string; format: "lrc" | "ttml" | "yrc" };
-      embedded?: { lyric: string; format: "lrc" };
-    }> => {
-      try {
-        // 获取文件基本信息
-        const absPath = resolve(musicPath);
-        const dir = dirname(absPath);
-        const ext = extname(absPath);
-        const baseName = basename(absPath, ext);
-        // 读取目录下所有文件
-        let files: string[] = [];
-        try {
-          files = await readdir(dir);
-        } catch (error) {
-          ipcLog.error("❌ Failed to read directory:", dir);
-          throw error;
-        }
-        // 外部歌词
-        let external: { lyric: string; format: "lrc" | "ttml" | "yrc" } | undefined;
-        // 内置歌词
-        let embedded: { lyric: string; format: "lrc" } | undefined;
-        // 查找外部歌词文件
-        for (const format of ["ttml", "yrc", "lrc"] as const) {
-          // 构造期望目标文件名
-          const targetNameLower = `${baseName}.${format}`.toLowerCase();
-          // 在文件列表中查找是否存在匹配项（忽略大小写）
-          const matchedFileName = files.find((file) => file.toLowerCase() === targetNameLower);
-          if (matchedFileName) {
-            try {
-              const lyricPath = join(dir, matchedFileName);
-              const lyric = await readFile(lyricPath, "utf-8");
-              // 若不为空
-              if (lyric && lyric.trim() !== "") {
-                ipcLog.info(`✅ Local lyric found (${format}): ${lyricPath}`);
-                external = { lyric, format };
-                break; // 找到最高优先级的外部歌词后停止
-              }
-            } catch {
-              // 读取失败则尝试下一种格式
-            }
-          }
-        }
-        // 读取内置元数据 (ID3 Tags)
-        try {
-          const { common } = await parseFile(absPath);
-          const syncedLyric = common?.lyrics?.[0]?.syncText;
-          if (syncedLyric && syncedLyric.length > 0) {
-            embedded = {
-              lyric: metaDataLyricsArrayToLrc(syncedLyric),
-              format: "lrc",
-            };
-          } else if (common?.lyrics?.[0]?.text) {
-            embedded = {
-              lyric: common?.lyrics?.[0]?.text,
-              format: "lrc",
-            };
-          }
-        } catch (e) {
-          ipcLog.warn(`⚠️ Failed to parse metadata for lyrics: ${absPath}`, e);
-        }
-        // 返回结果
-        const main = external || embedded || { lyric: "", format: "lrc" as const };
-        return {
-          ...main,
-          external,
-          embedded,
-        };
-      } catch (error) {
-        ipcLog.error("❌ Error fetching music lyric:", error);
-        throw error;
-      }
-    },
-  );
+  ipcMain.handle("get-music-lyric", async (_, musicPath: string) => {
+    return musicMetadataService.getLyric(musicPath);
+  });
 
   // 获取音乐封面
-  ipcMain.handle(
-    "get-music-cover",
-    async (_, path: string): Promise<{ data: Buffer; format: string } | null> => {
-      try {
-        const { common } = await parseFile(path);
-        // 获取封面数据
-        const picture = common.picture?.[0];
-        if (picture) {
-          return { data: Buffer.from(picture.data), format: picture.format };
-        } else {
-          const coverFilePath = path.replace(/\.[^.]+$/, ".jpg");
-          try {
-            await access(coverFilePath);
-            const coverData = await readFile(coverFilePath);
-            return { data: coverData, format: "image/jpeg" };
-          } catch {
-            return null;
-          }
-        }
-      } catch (error) {
-        console.error("❌ Error fetching music cover:", error);
-        throw error;
-      }
-    },
-  );
+  ipcMain.handle("get-music-cover", async (_, path: string) => {
+    return musicMetadataService.getCover(path);
+  });
 
   // 读取本地歌词
-  ipcMain.handle(
-    "read-local-lyric",
-    async (_, lyricDirs: string[], id: number): Promise<{ lrc: string; ttml: string }> => {
-      const result = { lrc: "", ttml: "" };
-
-      try {
-        // 定义需要查找的模式
-        // 此处的 `{,*.}` 表示这里可以取 `` (empty) 也可以取 `*.`
-        // 将歌词文件命名为 `歌曲ID.后缀名` 或者 `任意前缀.歌曲ID.后缀名` 均可
-        const patterns = {
-          ttml: `**/{,*.}${id}.ttml`,
-          lrc: `**/{,*.}${id}.lrc`,
-        };
-
-        // 遍历每一个目录
-        for (const dir of lyricDirs) {
-          try {
-            // 查找 ttml
-            if (!result.ttml) {
-              const ttmlFiles = await FastGlob(patterns.ttml, globOpt(dir));
-              if (ttmlFiles.length > 0) {
-                const filePath = join(dir, ttmlFiles[0]);
-                await access(filePath);
-                result.ttml = await readFile(filePath, "utf-8");
-              }
-            }
-
-            // 查找 lrc
-            if (!result.lrc) {
-              const lrcFiles = await FastGlob(patterns.lrc, globOpt(dir));
-              if (lrcFiles.length > 0) {
-                const filePath = join(dir, lrcFiles[0]);
-                await access(filePath);
-                result.lrc = await readFile(filePath, "utf-8");
-              }
-            }
-
-            // 如果两种文件都找到了就提前结束搜索
-            if (result.ttml && result.lrc) break;
-          } catch {
-            // 某个路径异常，跳过
-          }
-        }
-      } catch {
-        /* 忽略错误 */
-      }
-
-      return result;
-    },
-  );
+  ipcMain.handle("read-local-lyric", async (_, lyricDirs: string[], id: number) => {
+    return musicMetadataService.readLocalLyric(lyricDirs, id);
+  });
 
   // 删除文件
   ipcMain.handle("delete-file", async (_, path: string) => {
@@ -469,16 +287,11 @@ const initFileIpc = (): void => {
       // 规范化路径
       const resolvedPath = resolve(path);
       // 检查文件夹是否存在
-      try {
-        await access(resolvedPath);
-      } catch {
-        throw new Error("❌ Folder not found");
-      }
+      await access(resolvedPath);
       // 打开文件夹
       shell.showItemInFolder(resolvedPath);
     } catch (error) {
       ipcLog.error("❌ Folder open error", error);
-      throw error;
     }
   });
 
@@ -523,218 +336,13 @@ const initFileIpc = (): void => {
   });
 
   // 下载文件
-  ipcMain.handle(
-    "download-file",
-    async (
-      event,
-      url: string,
-      options: {
-        fileName: string;
-        fileType: string;
-        path: string;
-        downloadMeta?: boolean;
-        downloadCover?: boolean;
-        downloadLyric?: boolean;
-        saveMetaFile?: boolean;
-        lyric?: string;
-        songData?: any;
-        skipIfExist?: boolean;
-        threadCount?: number;
-        referer?: string;
-        enableDownloadHttp2?: boolean;
-      } = {
-        fileName: "未知文件名",
-        fileType: "mp3",
-        path: app.getPath("downloads"),
-      },
-    ): Promise<{ status: "success" | "skipped" | "error" | "cancelled"; message?: string }> => {
-      try {
-        // 获取窗口
-        const win = BrowserWindow.fromWebContents(event.sender);
-        if (!win) return { status: "error", message: "Window not found" };
-        // 获取配置
-        const {
-          fileName,
-          fileType,
-          path,
-          lyric,
-          downloadMeta,
-          downloadCover,
-          downloadLyric,
-          saveMetaFile,
-          songData,
-          skipIfExist,
-          referer,
-          enableDownloadHttp2,
-        } = options;
-        // 规范化路径
-        const downloadPath = resolve(path);
-        // 检查文件夹是否存在，不存在则自动递归创建
-        try {
-          await access(downloadPath);
-        } catch {
-          await mkdir(downloadPath, { recursive: true });
-        }
-
-        const finalFilePath = fileType
-          ? join(downloadPath, `${fileName}.${fileType}`)
-          : join(downloadPath, fileName);
-
-        // 检查文件是否存在
-        if (skipIfExist) {
-          try {
-            await access(finalFilePath);
-            return { status: "skipped", message: "文件已存在" };
-          } catch {
-            // 文件不存在，继续下载
-          }
-        }
-
-        // Prepare metadata
-        let metadata: SongMetadata | undefined | null = null;
-        if (downloadMeta && songData) {
-          const getArtistNames = (artists: any): string[] => {
-            if (Array.isArray(artists)) {
-              return artists
-                .map((ar: any) => (typeof ar === "string" ? ar : ar?.name || ""))
-                .filter((name) => name && name.trim().length > 0);
-            }
-            if (typeof artists === "string" && artists.trim().length > 0) {
-              return [artists];
-            }
-            return [];
-          };
-          const artistNames = getArtistNames(songData.artists);
-          const artist = artistNames.join(", ") || "未知艺术家";
-
-          const coverUrl =
-            downloadCover && (songData.coverSize?.l || songData.cover)
-              ? songData.coverSize?.l || songData.cover
-              : undefined;
-
-          metadata = {
-            title: songData.name || "未知曲目",
-            artist: artist,
-            album:
-              (typeof songData.album === "string" ? songData.album : songData.album?.name) ||
-              "未知专辑",
-            coverUrl: coverUrl,
-            lyric: downloadLyric && lyric ? lyric : undefined,
-            description: songData.alia || "",
-          };
-          // console.log("[Download] Resolved cover URL:", coverUrl);
-        }
-
-        const onProgress = (...args: any[]) => {
-          let progressData: any;
-
-          // Handle (err, value) or (value) signature
-          if (args.length > 1 && args[0] === null) {
-            progressData = args[1];
-          } else if (args.length > 0) {
-            progressData = args[0];
-          }
-
-          try {
-            if (!progressData) return;
-
-            // Handle both object (new) and JSON string (legacy/fallback)
-            if (typeof progressData === "string") {
-              try {
-                progressData = JSON.parse(progressData);
-              } catch (e) {
-                console.error("Failed to parse progress json", e);
-                return;
-              }
-            }
-
-            if (!progressData || typeof progressData !== "object") return;
-
-            // Map snake_case (Rust) to camelCase (JS)
-            // Rust struct: { percent, transferred_bytes, total_bytes }
-            const percent = progressData.percent;
-            const transferredBytes =
-              progressData.transferredBytes ?? progressData.transferred_bytes ?? 0;
-            const totalBytes = progressData.totalBytes ?? progressData.total_bytes ?? 0;
-
-            win.webContents.send("download-progress", {
-              id: songData?.id,
-              percent: percent,
-              transferredBytes: transferredBytes,
-              totalBytes: totalBytes,
-            });
-          } catch (e) {
-            console.error("Error processing progress callback", e, "Args:", args);
-          }
-        };
-
-        if (!tools) {
-          throw new Error("Native tools not loaded");
-        }
-
-        const store = useStore();
-        // Use threadCount from options if available, otherwise fall back to store
-        const threadCount =
-          (options.threadCount as number) || (store.get("downloadThreadCount") as number) || 8;
-
-        const enableHttp2 =
-          enableDownloadHttp2 !== undefined
-            ? enableDownloadHttp2
-            : (store.get("enableDownloadHttp2", true) as boolean);
-
-        // Upgrade HTTP to HTTPS if HTTP2 is enabled (HTTP2 usually requires HTTPS)
-        let finalUrl = url;
-        if (enableHttp2 && finalUrl.startsWith("http://")) {
-          finalUrl = finalUrl.replace(/^http:\/\//, "https://");
-          ipcLog.info(`🔒 Upgraded download URL to HTTPS for HTTP/2 support: ${finalUrl}`);
-        }
-
-        const task = new tools.DownloadTask();
-        const downloadId = songData?.id || 0;
-        activeDownloads.set(downloadId, task);
-
-        try {
-          await task.download(
-            finalUrl,
-            finalFilePath,
-            metadata,
-            threadCount,
-            referer,
-            onProgress,
-            enableHttp2,
-          );
-        } finally {
-          activeDownloads.delete(downloadId);
-        }
-
-        // 创建同名歌词文件
-        if (lyric && saveMetaFile && downloadLyric) {
-          const lrcPath = join(downloadPath, `${fileName}.lrc`);
-          await writeFile(lrcPath, lyric, "utf-8");
-        }
-
-        return { status: "success" };
-      } catch (error: any) {
-        ipcLog.error("❌ Error downloading file:", error);
-        if ((error.message && error.message.includes("cancelled")) || error.code === "Cancelled") {
-          return { status: "cancelled", message: "下载已取消" };
-        }
-        return {
-          status: "error",
-          message: error instanceof Error ? error.message : "Unknown error",
-        };
-      }
-    },
+  ipcMain.handle("download-file", (event, url, options) =>
+    downloadService.downloadFile(event, url, options),
   );
 
   // 取消下载
   ipcMain.handle("cancel-download", async (_, songId: number) => {
-    const task = activeDownloads.get(songId);
-    if (task) {
-      task.cancel();
-      return true;
-    }
-    return false;
+    return downloadService.cancelDownload(songId);
   });
 
   // 检查是否是相同的路径（规范化后比较）
@@ -754,57 +362,168 @@ const initFileIpc = (): void => {
     });
   });
 
-  // 保存文件内容 (用于保存文本文件等)
+  // 音频分析
   ipcMain.handle(
-    "save-file-content",
-    async (
-      _,
-      options: { path: string; fileName: string; content: string; encoding?: string },
-    ): Promise<{ success: boolean; message?: string }> => {
+    "analyze-audio",
+    async (_, filePath: string, options?: { maxAnalyzeTimeSec?: number }) => {
       try {
-        const { path, fileName, content, encoding = "utf-8" } = options;
-        // 规范化路径
-        const dirPath = resolve(path);
-        // 检查文件夹是否存在，不存在则自动递归创建
-        try {
-          await access(dirPath);
-        } catch {
-          await mkdir(dirPath, { recursive: true });
-        }
-        const filePath = join(dirPath, fileName);
+        const fileStat = await stat(filePath).catch(() => null);
+        if (!fileStat) return null;
 
-        if (encoding !== "utf-8") {
+        const maxTime = options?.maxAnalyzeTimeSec ?? 60;
+        const CURRENT_VERSION = 11; // 与 Rust 保持一致
+        const fileKey = normalizeAnalysisKey(filePath);
+
+        // 1. Check Cache
+        const candidateKeys = new Set<string>([fileKey, filePath]);
+        if (process.platform === "win32") {
+          candidateKeys.add(filePath.replaceAll("/", "\\").toLowerCase());
+          candidateKeys.add(filePath.replaceAll("\\", "/").toLowerCase());
+        }
+
+        for (const key of candidateKeys) {
+          const cached = await localMusicService.getAnalysis(key);
+          if (!cached || cached.mtime !== fileStat.mtimeMs || cached.size !== fileStat.size)
+            continue;
           try {
-            // 使用动态导入，避免启动时加载问题
-            const { encode } = await import("iconv-lite");
-            // iconv-lite support 'utf16' as alias for 'utf-16' etc.
-            const buffer = encode(content, encoding);
-            await writeFile(filePath, buffer);
+            const data = JSON.parse(cached.data);
+            if (
+              data &&
+              data.version === CURRENT_VERSION &&
+              data.analyze_window &&
+              Math.abs(data.analyze_window - maxTime) < 1.0
+            ) {
+              if (key !== fileKey) {
+                await localMusicService.saveAnalysis(
+                  fileKey,
+                  cached.data,
+                  fileStat.mtimeMs,
+                  fileStat.size,
+                );
+              }
+              return data;
+            }
           } catch (e) {
-            ipcLog.error(`❌ ${encoding} encoding failed:`, e);
-            // Fallback to UTF-8 on error
-            await writeFile(filePath, content, "utf-8");
+            void e;
           }
-        } else {
-          await writeFile(filePath, content, "utf-8");
         }
 
-        return { success: true };
-      } catch (error) {
-        ipcLog.error("❌ Error saving file content:", error);
-        return {
-          success: false,
-          message: error instanceof Error ? error.message : "Unknown error",
-        };
+        // 2. Analyze
+        const requestKey = `${fileKey}|${maxTime}`;
+        const inFlight = analysisInFlight.get(requestKey);
+        if (inFlight) return await inFlight;
+
+        const promise = (async () => {
+          const result = await runAnalysisInWorker(filePath, maxTime);
+          if (!result) return null;
+          try {
+            await localMusicService.saveAnalysis(
+              fileKey,
+              JSON.stringify(result),
+              fileStat.mtimeMs,
+              fileStat.size,
+            );
+          } catch (e) {
+            void e;
+          }
+          return result;
+        })().finally(() => {
+          analysisInFlight.delete(requestKey);
+        });
+
+        analysisInFlight.set(requestKey, promise);
+        return await promise;
+      } catch (err) {
+        console.error("Audio analysis failed:", err);
+        return null;
       }
     },
   );
-};
 
-function* chunkArray<T>(array: T[], size: number): Generator<T[], void, unknown> {
-  for (let i = 0; i < array.length; i += size) {
-    yield array.slice(i, i + size);
-  }
-}
+  ipcMain.handle(
+    "analyze-audio-head",
+    async (_, filePath: string, options?: { maxAnalyzeTimeSec?: number }) => {
+      try {
+        const fileStat = await stat(filePath).catch(() => null);
+        if (!fileStat) return null;
+
+        const maxTime = options?.maxAnalyzeTimeSec ?? 60;
+        const CURRENT_VERSION = 11;
+        const fileKey = normalizeAnalysisKey(filePath);
+        const headKey = `${fileKey}|head|${maxTime}`;
+
+        const cached = await localMusicService.getAnalysis(headKey);
+        if (cached && cached.mtime === fileStat.mtimeMs && cached.size === fileStat.size) {
+          try {
+            const data = JSON.parse(cached.data);
+            if (data && data.version === CURRENT_VERSION && data.analyze_window) {
+              ipcLog.info(`[AudioAnalysis] Head 命中缓存: ${headKey}`);
+              return data;
+            }
+          } catch (e) {
+            void e;
+          }
+        }
+
+        const requestKey = `${headKey}|request`;
+        const inFlight = analysisInFlight.get(requestKey);
+        if (inFlight) return await inFlight;
+
+        const promise = (async () => {
+          ipcLog.info(`[AudioAnalysis] Head 开始分析: ${headKey}`);
+          const result = await runHeadAnalysisInWorker(filePath, maxTime);
+          if (!result) return null;
+          try {
+            await localMusicService.saveAnalysis(
+              headKey,
+              JSON.stringify(result),
+              fileStat.mtimeMs,
+              fileStat.size,
+            );
+          } catch (e) {
+            void e;
+          }
+          return result;
+        })().finally(() => {
+          analysisInFlight.delete(requestKey);
+        });
+
+        analysisInFlight.set(requestKey, promise);
+        return await promise;
+      } catch (err) {
+        console.error("Audio head analysis failed:", err);
+        return null;
+      }
+    },
+  );
+
+  ipcMain.handle("suggest-transition", async (_, currentPath: string, nextPath: string) => {
+    try {
+      const a = await stat(currentPath).catch(() => null);
+      if (!a) return null;
+      const b = await stat(nextPath).catch(() => null);
+      if (!b) return null;
+      ipcLog.info(`[AudioAnalysis] SuggestTransition: ${currentPath} -> ${nextPath}`);
+      return await runSuggestTransitionInWorker(currentPath, nextPath);
+    } catch (err) {
+      console.error("Suggest transition failed:", err);
+      return null;
+    }
+  });
+
+  ipcMain.handle("suggest-long-mix", async (_, currentPath: string, nextPath: string) => {
+    try {
+      const a = await stat(currentPath).catch(() => null);
+      if (!a) return null;
+      const b = await stat(nextPath).catch(() => null);
+      if (!b) return null;
+      ipcLog.info(`[AudioAnalysis] SuggestLongMix: ${currentPath} -> ${nextPath}`);
+      return await runSuggestLongMixInWorker(currentPath, nextPath);
+    } catch (err) {
+      console.error("Suggest long mix failed:", err);
+      return null;
+    }
+  });
+};
 
 export default initFileIpc;

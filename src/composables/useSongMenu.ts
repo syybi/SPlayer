@@ -9,10 +9,11 @@ import {
 } from "@/stores";
 import { useDownloadManager } from "@/core/resource/DownloadManager";
 import { usePlayerController } from "@/core/player/PlayerController";
-import { renderIcon, copyData } from "@/utils/helper";
+import { renderIcon, copyData, getShareUrl } from "@/utils/helper";
 import { deleteCloudSong, importCloudSong } from "@/api/cloud";
 import {
   openCloudMatch,
+  openCopySongInfo,
   openDownloadSong,
   openPlaylistAdd,
   openSongInfoEditor,
@@ -249,12 +250,21 @@ export const useSongMenu = () => {
             icon: renderIcon("Copy", { size: 18 }),
           },
           {
+            key: "copy-song-info",
+            label: "复制更多信息",
+            show: !isLocal && type === "song",
+            props: {
+              onClick: () => openCopySongInfo(song.id),
+            },
+            icon: renderIcon("FormatList", { size: 18 }),
+          },
+          {
             key: "share",
             label: `分享${type === "song" ? "歌曲" : "节目"}链接`,
             show: !isLocal && type !== "streaming",
             props: {
               onClick: () =>
-                copyData(`https://music.163.com/#/${type}?id=${song.id}`, "已复制分享链接到剪切板"),
+                copyData(getShareUrl(type, song.id), "已复制分享链接到剪贴板"),
             },
             icon: renderIcon("Share", { size: 18 }),
           },

@@ -19,7 +19,7 @@
  * @see https://github.com/apoint123/Unilyric/blob/afd351c54eca7137cf8ee4ea5652d9ee55c20e32/lyrics_helper_rs/src/converter/processors/metadata_stripper.rs
  */
 
-import { type LyricLine } from "@applemusic-like-lyrics/lyric";
+import type { LyricLine } from "@applemusic-like-lyrics/lyric";
 
 const STRICT_MATCH_SEPARATORS = [
   ":",
@@ -75,6 +75,13 @@ export interface StripOptions {
    * 这里的正则表达式会被视为弱匹配
    */
   softMatchRegexes?: string[];
+  /**
+   * 歌曲元数据，用于检查第一行是否为 "歌曲 - 歌手" 格式
+   */
+  matchMetadata?: {
+    title?: string;
+    artists?: string[];
+  };
 }
 
 const DEFAULT_HEADER_LIMIT: ScanLimitConfig = {
@@ -217,16 +224,17 @@ function looksLikeMetadata(text: string, softRegexes: RegExp[]): boolean {
  */
 function findHeaderCutoff(
   lines: readonly LyricLine[],
+  startIndex: number,
   keywords: string[],
   regexes: RegExp[],
   softRegexes: RegExp[],
   limit: number,
 ): number {
-  let lastValidMetadataIndex = -1;
+  let lastValidMetadataIndex = startIndex - 1;
 
-  console.groupCollapsed(`[LyricStripper] ⬇️ 开始头部扫描 (Limit: ${limit})`);
+  console.groupCollapsed(`[LyricStripper] ⬇️ 开始头部扫描 (Start: ${startIndex}, Limit: ${limit})`);
 
-  for (let i = 0; i < limit; i++) {
+  for (let i = startIndex; i < limit; i++) {
     if (i >= lines.length) break;
 
     const text = getLineText(lines[i]);
@@ -316,7 +324,31 @@ export function stripLyricMetadata(
 ): LyricLine[] {
   if (!lines || lines.length === 0) return [];
 
+  let scanStartIndex = 0;
+
+  if (options.matchMetadata) {
+    const { title, artists } = options.matchMetadata;
+    const firstLineText = getLineText(lines[0]);
+
+    if (title && artists && artists.length > 0 && firstLineText) {
+      const lowerText = firstLineText.toLowerCase();
+      const lowerTitle = title.toLowerCase();
+
+      if (lowerText.includes(lowerTitle)) {
+        const hasAnyArtist = artists.some((artist) => lowerText.includes(artist.toLowerCase()));
+
+        if (hasAnyArtist) {
+          console.log(
+            `[LyricStripper] 在第一行匹配到歌曲元数据: "${firstLineText}" (Title: ${title}, Artists: ${artists.join(", ")})`,
+          );
+          scanStartIndex = 1;
+        }
+      }
+    }
+  }
+
   if (
+    scanStartIndex === 0 &&
     (!options.keywords || options.keywords.length === 0) &&
     (!options.regexPatterns || options.regexPatterns.length === 0) &&
     (!options.softMatchRegexes || options.softMatchRegexes.length === 0)
@@ -354,7 +386,14 @@ export function stripLyricMetadata(
   const headerConfig = DEFAULT_HEADER_LIMIT;
   const headerLimit = calculateScanLimit(headerConfig, totalLines);
 
-  const startIdx = findHeaderCutoff(lines, keywords, regexes, softRegexes, headerLimit);
+  const startIdx = findHeaderCutoff(
+    lines,
+    scanStartIndex,
+    keywords,
+    regexes,
+    softRegexes,
+    headerLimit,
+  );
 
   const footerConfig = DEFAULT_FOOTER_LIMIT;
   const footerLimit = calculateScanLimit(footerConfig, totalLines);

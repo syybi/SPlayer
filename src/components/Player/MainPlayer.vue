@@ -241,10 +241,11 @@ import { useDataStore, useMusicStore, useSettingStore, useStatusStore } from "@/
 import { toLikeSong } from "@/utils/auth";
 import { useTimeFormat } from "@/composables/useTimeFormat";
 import { useSwipe } from "@vueuse/core";
-import { copyData, coverLoaded, renderIcon } from "@/utils/helper";
+import { copyData, coverLoaded, renderIcon, getShareUrl } from "@/utils/helper";
 import {
   openAutoClose,
   openChangeRate,
+  openCopySongInfo,
   openDownloadSong,
   openJumpArtist,
   openPlaylistAdd,
@@ -311,13 +312,22 @@ const songMoreOptions = computed<DropdownOption[]>(() => {
           icon: renderIcon("Copy", { size: 18 }),
         },
         {
+          key: "copy-song-info",
+          label: "复制更多信息",
+          show: !isLocal && isSong,
+          props: {
+            onClick: () => openCopySongInfo(song.id),
+          },
+          icon: renderIcon("FormatList", { size: 18 }),
+        },
+        {
           key: "share",
           label: `分享${song.type === "song" ? "歌曲" : "节目"}链接`,
           show: !isLocal,
           props: {
             onClick: () =>
               copyData(
-                `https://music.163.com/#/${song.type}?id=${song.id}`,
+                getShareUrl(song.type, song.id),
                 "已复制分享链接到剪切板",
               ),
           },

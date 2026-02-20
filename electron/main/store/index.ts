@@ -53,6 +53,10 @@ export interface StoreType {
     showWhenPaused?: boolean;
     /** 自动收缩 */
     autoShrink?: boolean;
+    /** 边距 */
+    margin?: number;
+    /** 最小宽度 (百分比) */
+    minWidth?: number;
   };
   /** 代理 */
   proxy: string;
@@ -73,6 +77,16 @@ export interface StoreType {
   downloadThreadCount?: number;
   /** 启用HTTP2下载 */
   enableDownloadHttp2?: boolean;
+  /** macOS 专属设置 */
+  macos: {
+    /** 状态栏歌词 */
+    statusBarLyric: {
+      /** 是否启用 */
+      enabled: boolean;
+    };
+  };
+  /** 更新通道 */
+  updateChannel?: "stable" | "nightly";
 }
 
 /**
@@ -103,6 +117,13 @@ export const useStore = () => {
         position: "automatic",
         showWhenPaused: true,
         autoShrink: false,
+        margin: 10,
+        minWidth: 10,
+      },
+      macos: {
+        statusBarLyric: {
+          enabled: false,
+        },
       },
       proxy: "",
       amllDbServer: defaultAMLLDbServer,
@@ -115,6 +136,7 @@ export const useStore = () => {
       },
       downloadThreadCount: 8,
       enableDownloadHttp2: true,
+      updateChannel: "stable",
     },
   });
 };

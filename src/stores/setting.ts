@@ -52,22 +52,30 @@ export interface SettingState {
   taskbarLyricPosition: "automatic" | "left" | "right";
   /** 任务栏歌词自动收缩 */
   taskbarLyricAutoShrink: boolean;
+  /** 任务栏歌词边距 */
+  taskbarLyricMargin: number;
+  /** 任务栏歌词最小宽度 */
+  taskbarLyricMinWidth: number;
   /** 暂停时显示任务栏歌词 */
   taskbarLyricShowWhenPaused: boolean;
   /** 任务栏歌词动画模式 */
   taskbarLyricAnimationMode: "slide-blur" | "left-sm";
   /** 任务栏歌词单行模式 */
   taskbarLyricSingleLineMode: boolean;
+  /** 任务栏歌词跟随主题色 */
+  taskbarLyricUseThemeColor: boolean;
   /** 任务栏歌词字重 */
   taskbarLyricFontWeight: number;
   /** 是否使用在线服务 */
   useOnlineService: boolean;
+  /** 分享链接格式 */
+  shareUrlFormat: "web" | "mobile";
   /** 启动时检查更新 */
   checkUpdateOnStart: boolean;
-  /** 更新通道 */
-  updateChannel: "stable" | "nightly";
   /** 隐藏 VIP 标签 */
   hideVipTag: boolean;
+  /** 歌词字体大小模式 */
+  lyricFontSizeMode: "fixed" | "adaptive";
   /** 歌词字体大小 */
   lyricFontSize: number;
   /** 歌词翻译字体大小 */
@@ -411,8 +419,8 @@ export interface SettingState {
   };
   /** 启用搜索关键词获取 */
   enableSearchKeyword: boolean;
-  /** 失焦后自动清空搜索框 */
-  clearSearchOnBlur: boolean;
+  /** 搜索框行为 */
+  searchInputBehavior: "normal" | "clear" | "sync";
   /** 显示主页问好 */
   showHomeGreeting: boolean;
   /** 首页栏目顺序和显示配置 */
@@ -467,8 +475,20 @@ export interface SettingState {
   disableAiAudio: boolean;
   /** Fuck DJ: 开启后自动跳过 DJ 歌曲 */
   disableDjMode: boolean;
+  /** 启用自动混音 */
+  enableAutomix: boolean;
+  /** 自动混音最大分析时间 (秒) */
+  automixMaxAnalyzeTime: number;
   /** 启用全局错误弹窗 */
   enableGlobalErrorDialog: boolean;
+  /** macOS 专属设置 */
+  macos: {
+    /** 状态栏歌词 */
+    statusBarLyric: {
+      /** 是否启用 */
+      enabled: boolean;
+    };
+  };
 }
 
 export const useSettingStore = defineStore("setting", {
@@ -495,6 +515,7 @@ export const useSettingStore = defineStore("setting", {
     routeAnimation: "slide",
     playerExpandAnimation: "up",
     useOnlineService: true,
+    shareUrlFormat: "web",
     showCloseAppTip: true,
     closeAppMethod: "hide",
     showTaskbarProgress: false,
@@ -502,12 +523,14 @@ export const useSettingStore = defineStore("setting", {
     taskbarLyricMaxWidth: 30,
     taskbarLyricPosition: "automatic",
     taskbarLyricAutoShrink: false,
+    taskbarLyricMargin: 10,
+    taskbarLyricMinWidth: 10,
     taskbarLyricShowWhenPaused: true,
     taskbarLyricAnimationMode: "slide-blur",
     taskbarLyricSingleLineMode: false,
+    taskbarLyricUseThemeColor: false,
     taskbarLyricFontWeight: 400,
     checkUpdateOnStart: true,
-    updateChannel: "stable",
     preventSleep: false,
     useKeepAlive: true,
     songLevel: "exhigh",
@@ -546,6 +569,7 @@ export const useSettingStore = defineStore("setting", {
     playSongDemo: false,
     scrobbleSong: false,
     dynamicCover: false,
+    lyricFontSizeMode: "adaptive",
     lyricFontSize: 46,
     lyricTranFontSize: 22,
     lyricRomaFontSize: 18,
@@ -692,7 +716,7 @@ export const useSettingStore = defineStore("setting", {
       musicTagEditor: true,
     },
     enableSearchKeyword: true,
-    clearSearchOnBlur: false,
+    searchInputBehavior: "normal",
     showHomeGreeting: true,
     homePageSections: [
       { key: "playlist", name: "专属歌单", visible: true, order: 0 },
@@ -730,7 +754,14 @@ export const useSettingStore = defineStore("setting", {
     streamingEnabled: false,
     disableAiAudio: false,
     disableDjMode: false,
+    enableAutomix: false,
+    automixMaxAnalyzeTime: 60,
     enableGlobalErrorDialog: true,
+    macos: {
+      statusBarLyric: {
+        enabled: false,
+      },
+    },
   }),
   getters: {
     /**

@@ -5,14 +5,15 @@ import type {
   TrayWatcher,
   UiaWatcher,
 } from "@native/taskbar-lyric";
+import { TASKBAR_IPC_CHANNELS } from "@shared";
 import { app, type BrowserWindow, ipcMain, nativeTheme, screen } from "electron";
 import { debounce } from "lodash-es";
 import { join } from "node:path";
 import { processLog } from "../logger";
+import { useStore } from "../store";
 import { isDev, port } from "../utils/config";
 import { loadNativeModule } from "../utils/native-loader";
 import { createWindow } from "./index";
-import { useStore } from "../store";
 
 type taskbarLyricModule = typeof import("@native/taskbar-lyric");
 
@@ -49,6 +50,8 @@ class TaskbarLyricWindow {
   private isNativeDisposed = false;
   private contentWidth = 300;
   private maxWidthPercent = 30;
+  private isFadingOut = false;
+  private shouldBeVisible = false;
 
   private debouncedUpdateLayout = debounce(() => {
     this.updateLayout(true);
@@ -113,10 +116,26 @@ class TaskbarLyricWindow {
 
     this.win.loadURL(taskbarLyricUrl);
 
+    // 因为任务栏窗口非常小，默认嵌入的开发者工具完全无法使用，
+    // 所以监听 F12 并按分离模式打开开发者工具
+    this.win.webContents.on("before-input-event", (event, input) => {
+      if (input.key === "F12" && input.type === "keyDown") {
+        if (this.win?.webContents.isDevToolsOpened()) {
+          this.win?.webContents.closeDevTools();
+        } else {
+          this.win?.webContents.openDevTools({ mode: "detach" });
+        }
+        event.preventDefault();
+      }
+    });
+
     const sendTheme = () => {
       if (this.win && !this.win.isDestroyed()) {
         const isDark = nativeTheme.shouldUseDarkColors;
-        this.win.webContents.send("taskbar:update-theme", { isDark });
+        this.win.webContents.send(TASKBAR_IPC_CHANNELS.SYNC_STATE, {
+          type: "system-theme",
+          data: { isDark },
+        });
       }
     };
 
@@ -138,7 +157,9 @@ class TaskbarLyricWindow {
     this.win.once("ready-to-show", () => {
       if (this.win) {
         this.embed();
-        this.win.show();
+        if (this.shouldBeVisible) {
+          this.win.show();
+        }
         this.updateLayout(false);
         sendTheme();
       }
@@ -234,17 +255,19 @@ class TaskbarLyricWindow {
     try {
       const primaryDisplay = screen.getPrimaryDisplay();
       const scaleFactor = primaryDisplay.scaleFactor;
-      const GAP = 10 * scaleFactor;
+      const store = useStore();
+      const GAP = store.get("taskbar.margin", 10) * scaleFactor;
       const maxWidthSetting = Math.round(
         (primaryDisplay.workAreaSize.width * this.maxWidthPercent) / 100,
       );
-      const store = useStore();
       const positionSetting = store.get("taskbar.position", "automatic");
       const autoShrink = store.get("taskbar.autoShrink", false);
       const MAX_WIDTH_PHYSICAL = autoShrink
         ? Math.min(maxWidthSetting, this.contentWidth) * scaleFactor
         : maxWidthSetting * scaleFactor;
-      const MIN_WIDTH_PHYSICAL = 50 * scaleFactor;
+      const minWidthPercent = Math.min(Math.max(store.get("taskbar.minWidth", 10), 0), 50);
+      const MIN_WIDTH_PHYSICAL =
+        Math.round((primaryDisplay.workAreaSize.width * minWidthPercent) / 100) * scaleFactor;
 
       let targetBounds: Electron.Rectangle = {
         x: 0,
@@ -316,7 +339,7 @@ class TaskbarLyricWindow {
 
         // processLog.info(finalPhysicalWidth, finalPhysicalX);
 
-        if (finalPhysicalWidth < MIN_WIDTH_PHYSICAL) {
+        if (finalPhysicalWidth <= 0) {
           processLog.warn("[TaskbarLyric] 无可用空间");
           this.win.hide();
           return;
@@ -340,6 +363,11 @@ class TaskbarLyricWindow {
       };
 
       // processLog.info(JSON.stringify(finalBounds));
+
+      // 空间恢复后自动重新显示
+      if (this.shouldBeVisible && !this.win.isVisible()) {
+        this.win.show();
+      }
 
       if (this.useAnimation) {
         this.animateToBounds(finalBounds);
@@ -411,6 +439,34 @@ class TaskbarLyricWindow {
         this.win.setBounds(target);
       }
     }, interval);
+  }
+
+  public setVisibility(shouldShow: boolean) {
+    this.shouldBeVisible = shouldShow;
+
+    if (!this.win || this.win.isDestroyed()) return;
+
+    if (shouldShow) {
+      this.isFadingOut = false;
+
+      if (!this.win.isVisible()) {
+        this.win.show();
+      }
+
+      this.win.webContents.send("taskbar:fade-in");
+    } else {
+      if (this.win.isVisible() && !this.isFadingOut) {
+        this.isFadingOut = true;
+        this.win.webContents.send("taskbar:fade-out");
+      }
+    }
+  }
+
+  public handleFadeDone() {
+    if (this.isFadingOut && this.win && !this.win.isDestroyed()) {
+      this.win.hide();
+      this.isFadingOut = false;
+    }
   }
 
   public destroy() {
