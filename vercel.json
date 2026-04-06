@@ -1,6 +1,6 @@
 {
-  "outputDirectory": "out/renderer",
+  "installCommand": "npx pnpm@10.28.1 install --ignore-scripts",
   "buildCommand": "SKIP_NATIVE_BUILD=true rimraf dist out && electron-vite build",
-  "framework": null,
-  "installCommand": "pnpm install --ignore-scripts"
+  "outputDirectory": "out/renderer",
+  "framework": null
 }
