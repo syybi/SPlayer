@@ -1,26 +1,33 @@
-import { SongUrlResult } from "./unblock";
+import type { SongMatchInfo, SongUrlResult } from "./unblock";
+import { isSongMatch } from "./match";
 import { serverLog } from "../../main/logger";
 import axios from "axios";
 import { randomBytes } from "crypto";
 
 /**
  * 搜索歌曲获取 ID
- * @param keyword 搜索关键词
+ * @param match 原曲匹配信息
  * @returns 歌曲 ID 或 null
  */
-const search = async (keyword: string): Promise<string | null> => {
+const search = async (match: SongMatchInfo): Promise<string | null> => {
   try {
-    const searchUrl = `https://www.gequbao.com/s/${encodeURIComponent(keyword)}`;
+    const searchUrl = `https://www.gequbao.com/s/${encodeURIComponent(match.keyword)}`;
     const { data } = await axios.get(searchUrl);
 
-    // 匹配第一个歌曲链接 /music/12345
+    // 匹配歌曲链接和歌名
     // <a href="/music/17165" target="_blank" class="music-link d-block">
-    const match = data.match(
-      /<a href="\/music\/(\d+)" target="_blank" class="music-link d-block">/,
-    );
-    if (match && match[1]) {
-      return match[1];
+    const regex = /<a href="\/music\/(\d+)" target="_blank" class="music-link d-block">\s*([^<]*)/g;
+    let hasResult = false;
+    // 校验歌名是否与原曲吻合（歌曲宝搜索页无艺术家信息，仅校验歌名）
+    for (const m of data.matchAll(regex)) {
+      hasResult = true;
+      const songName = m[2]?.trim();
+      if (songName && isSongMatch(songName, undefined, match)) {
+        return m[1];
+      }
     }
+    if (!hasResult) return null;
+    serverLog.warn(`⚠️ Gequbao 搜索结果均不匹配原曲: "${match.songName}"`);
     return null;
   } catch (error) {
     serverLog.error("❌ Get GequbaoSongId Error:", error);
@@ -53,15 +60,15 @@ const getPlayId = async (id: string): Promise<string | null> => {
 
 /**
  * 获取歌曲 URL
- * @param keyword 搜索关键词
+ * @param match 原曲匹配信息
  * @returns 包含歌曲 URL 的结果对象
  */
-const getGequbaoSongUrl = async (keyword: string): Promise<SongUrlResult> => {
+const getGequbaoSongUrl = async (match: SongMatchInfo): Promise<SongUrlResult> => {
   try {
-    if (!keyword) return { code: 404, url: null };
+    if (!match.keyword) return { code: 404, url: null };
 
     // 1. 获取 ID
-    const id = await search(keyword);
+    const id = await search(match);
     if (!id) return { code: 404, url: null };
 
     // 2. 获取 play_id

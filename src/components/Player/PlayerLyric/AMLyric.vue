@@ -82,7 +82,7 @@ const amLyricsData = computed(() => {
   const { songLyric } = musicStore;
   if (!songLyric) return [];
   // 优先使用逐字歌词(YRC/TTML)
-  const useYrc = songLyric.yrcData?.length && settingStore.showYrc;
+  const useYrc = songLyric.yrcData?.length && settingStore.showWordLyrics;
   const lyrics = useYrc ? songLyric.yrcData : songLyric.lrcData;
   // 简单检查歌词有效性
   if (!Array.isArray(lyrics) || lyrics.length === 0) return [];
@@ -209,43 +209,6 @@ watch(lyricPlayerRef, (player) => {
     :deep(.am-lyric) {
       margin: 0;
       padding: 0 80px;
-    }
-  }
-
-  /* 对常见的“当前高亮行”类名应用加法混合模式，使其高亮更亮 */
-  :deep(.am-lyric .current),
-  :deep(.am-lyric .is-current),
-  :deep(.am-lyric .active),
-  :deep(.am-lyric .is-active),
-  :deep(.am-lyric .lyric-line.current),
-  :deep(.am-lyric .lyric-line.is-current) {
-    /* 使用加法混合，叠加会更亮 */
-    mix-blend-mode: plus-lighter;
-    /* 更亮的文字颜色（半透明白），便于加法叠加效果 */
-    color: rgba(255, 255, 255, 0.95);
-    /* 轻微发光，配合混合模式效果更自然 */
-    text-shadow: 0 2px 12px rgba(255, 255, 255, 0.06);
-    /* 告诉浏览器该元素可能会变化，优化渲染 */
-    will-change: transform, opacity, color;
-  }
-
-  /* 只对主歌词文本（非翻译/音译）启用混合，匹配带有 lang 属性的主元素 */
-  :deep(.am-lyric [lang]) {
-    /* 默认保持正常，但在高亮时会被上面的规则覆盖 */
-    -webkit-font-smoothing: antialiased;
-  }
-
-  /* 若浏览器不支持 plus-lighter，使用 supports 提供降级样式 */
-  @supports not (mix-blend-mode: plus-lighter) {
-    :deep(.am-lyric .current),
-    :deep(.am-lyric .is-current),
-    :deep(.am-lyric .active),
-    :deep(.am-lyric .is-active),
-    :deep(.am-lyric .lyric-line.current),
-    :deep(.am-lyric .lyric-line.is-current) {
-      /* 降级为更明显的颜色与阴影（非混合） */
-      color: #ffffff;
-      text-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
     }
   }
 

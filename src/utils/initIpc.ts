@@ -85,37 +85,15 @@ const initIpc = () => {
     );
 
     // 给任务栏歌词初始数据
-    window.electron.ipcRenderer.on(TASKBAR_IPC_CHANNELS.REQUEST_DATA, () => {
+window.electron.ipcRenderer.on(TASKBAR_IPC_CHANNELS.REQUEST_DATA, async () => {
       const musicStore = useMusicStore();
       const statusStore = useStatusStore();
-      const settingStore = useSettingStore();
 
       const { name, artist } = getPlayerInfoObj() || {};
       const cover = musicStore.getSongCover("s") || "";
 
-      const configPayload: TaskbarConfig = {
-        // 布局
-        maxWidth: settingStore.taskbarLyricMaxWidth,
-        position: settingStore.taskbarLyricPosition,
-        autoShrink: settingStore.taskbarLyricAutoShrink,
-        margin: settingStore.taskbarLyricMargin,
-        minWidth: settingStore.taskbarLyricMinWidth,
-
-        // 行为
-        enabled: statusStore.showTaskbarLyric,
-        showWhenPaused: settingStore.taskbarLyricShowWhenPaused,
-
-        // 外观
-        showCover: settingStore.taskbarLyricShowCover,
-        themeMode: "auto", // TODO:
-        fontFamily: settingStore.LyricFont,
-        globalFont: settingStore.globalFont,
-        fontWeight: settingStore.taskbarLyricFontWeight,
-        animationMode: settingStore.taskbarLyricAnimationMode,
-        singleLineMode: settingStore.taskbarLyricSingleLineMode,
-        showTranslation: settingStore.showTran,
-        showRomaji: settingStore.showRoma,
-      };
+      const configPayload: TaskbarConfig =
+        (await window.electron.ipcRenderer.invoke(TASKBAR_IPC_CHANNELS.GET_OPTION)) ?? {};
 
       const hasYrc = (musicStore.songLyric.yrcData?.length ?? 0) > 0;
       const lyricsPayload = {

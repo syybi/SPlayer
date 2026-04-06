@@ -36,8 +36,22 @@ export const songUrl = (
     | "hires"
     | "jyeffect"
     | "sky"
+    | "dolby"
     | "jymaster" = "exhigh",
 ) => {
+  // 杜比全景声使用旧版接口，并传入特殊参数
+  if (level === "dolby") {
+    return request({
+      url: "/song/url",
+      params: {
+        id,
+        br: 999000,
+        immerseType: "c51",
+        timestamp: Date.now(),
+      },
+    });
+  }
+
   return request({
     url: "/song/url/v1",
     params: {
@@ -49,8 +63,14 @@ export const songUrl = (
 };
 
 // 获取解锁歌曲 URL
-export const unlockSongUrl = (id: number, keyword: string, server: SongUnlockServer) => {
-  const params = server === SongUnlockServer.NETEASE ? { id } : { keyword };
+export const unlockSongUrl = (
+  id: number,
+  keyword: string,
+  server: SongUnlockServer,
+  songName?: string,
+  artist?: string,
+) => {
+  const params = server === SongUnlockServer.NETEASE ? { id } : { keyword, songName, artist };
   return request({
     baseURL: "/api/unblock",
     url: `/${server}`,

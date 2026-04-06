@@ -1,4 +1,5 @@
-import { SongUrlResult } from "./unblock";
+import type { SongMatchInfo, SongUrlResult } from "./unblock";
+import { isSongMatch } from "./match";
 import { serverLog } from "../../main/logger";
 import { createHash } from "crypto";
 import axios from "axios";
@@ -57,12 +58,12 @@ const generateSign = (str: string) => {
 
 /**
  * 搜索歌曲
- * @param keyword 搜索关键词
+ * @param match 原曲匹配信息
  * @returns 歌曲 ID 或 null
  */
-const search = async (info: string): Promise<string | null> => {
+const search = async (match: SongMatchInfo): Promise<string | null> => {
   try {
-    const keyword = encodeURIComponent(info.replace(" - ", " "));
+    const keyword = encodeURIComponent(match.keyword.replace(" - ", " "));
     const url =
       "http://search.kuwo.cn/r.s?&correct=1&vipver=1&stype=comprehensive&encoding=utf8" +
       "&rformat=json&mobi=1&show_copyright_off=1&searchapi=6&all=" +
@@ -76,10 +77,17 @@ const search = async (info: string): Promise<string | null> => {
     ) {
       return null;
     }
-    // 获取歌曲信息
+    // 遍历搜索结果，找歌名和艺术家匹配的项
     const list = result.data.content[1].musicpage.abslist.map(format);
-    if (list[0] && !list[0]?.id) return null;
-    return list[0].id;
+    for (const item of list) {
+      if (!item?.id) continue;
+      const artistStr = item.artists?.map((a: any) => a.name).join("&") || "";
+      if (isSongMatch(item.name || "", artistStr, match)) {
+        return item.id;
+      }
+    }
+    serverLog.warn(`⚠️ Bodian 搜索结果均不匹配原曲: "${match.songName}"`);
+    return null;
   } catch (error) {
     serverLog.error("❌ Get BodianSongId Error:", error);
     return null;
@@ -121,13 +129,13 @@ const sendAdFreeRequest = () => {
 
 /**
  * 获取波点音乐歌曲 URL
- * @param keyword 搜索关键词
+ * @param match 原曲匹配信息
  * @returns 包含歌曲 URL 的结果对象
  */
-const getBodianSongUrl = async (keyword: string): Promise<SongUrlResult> => {
+const getBodianSongUrl = async (match: SongMatchInfo): Promise<SongUrlResult> => {
   try {
-    if (!keyword) return { code: 404, url: null };
-    const songId = await search(keyword);
+    if (!match.keyword) return { code: 404, url: null };
+    const songId = await search(match);
     if (!songId) return { code: 404, url: null };
     // 请求地址
     const headers = {

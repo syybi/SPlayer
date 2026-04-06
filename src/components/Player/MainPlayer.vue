@@ -97,8 +97,8 @@
               <!-- 歌手 -->
               <div v-else class="artists">
                 <TextContainer :speed="0.5" class="artists-container">
-                  <n-text v-if="musicStore.playSong.type === 'radio'" class="ar-item">
-                    播客电台
+                  <n-text v-if="musicStore.playSong.type === 'radio'" class="ar-item" @click="showCreatorTip">
+                    {{ musicStore.playSong.dj?.creator || "未知艺术家" }}
                   </n-text>
                   <template v-else-if="Array.isArray(musicStore.playSong.artists)">
                     <n-text
@@ -146,7 +146,12 @@
       <div
         v-if="statusStore.personalFmMode"
         class="play-icon"
-        v-debounce="() => songManager.personalFMTrash(musicStore.personalFMSong?.id)"
+        v-debounce="
+          () =>
+            songManager.personalFMTrash(musicStore.personalFMSong?.id, () =>
+              player.nextOrPrev('next'),
+            )
+        "
       >
         <SvgIcon class="icon" :size="18" name="ThumbDown" />
       </div>
@@ -325,11 +330,7 @@ const songMoreOptions = computed<DropdownOption[]>(() => {
           label: `分享${song.type === "song" ? "歌曲" : "节目"}链接`,
           show: !isLocal,
           props: {
-            onClick: () =>
-              copyData(
-                getShareUrl(song.type, song.id),
-                "已复制分享链接到剪切板",
-              ),
+            onClick: () => copyData(getShareUrl(song.type, song.id), "已复制分享链接到剪切板"),
           },
           icon: renderIcon("Share", { size: 18 }),
         },
@@ -388,10 +389,9 @@ const songMoreOptions = computed<DropdownOption[]>(() => {
       show: !isLocal,
       props: {
         onClick: () => {
-          statusStore.$patch({
-            showFullPlayer: true,
-            showPlayerComment: true,
-          });
+          const id = musicStore.playSong.id;
+          const type = musicStore.playSong.type === "radio" ? 4 : 0;
+          router.push({ name: "comment", query: { id, type } });
         },
       },
       icon: renderIcon("Message"),
@@ -414,7 +414,7 @@ const isShowLyrics = computed(() => {
 
 // 当前实时歌词
 const instantLyrics = computed(() => {
-  const isYrc = musicStore.songLyric.yrcData?.length && settingStore.showYrc;
+  const isYrc = musicStore.songLyric.yrcData?.length && settingStore.showWordLyrics;
   const content = isYrc
     ? musicStore.songLyric.yrcData[statusStore.lyricIndex]
     : musicStore.songLyric.lrcData[statusStore.lyricIndex];
@@ -423,6 +423,9 @@ const instantLyrics = computed(() => {
     ? `${contentStr}（ ${content?.translatedLyric} ）`
     : contentStr || "";
 });
+
+// 暂不支持查看主播主页
+const showCreatorTip = () => window.$message.info("暂不支持查看主播主页");
 </script>
 
 <style lang="scss" scoped>

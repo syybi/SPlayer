@@ -58,9 +58,7 @@
           <n-select
             v-else-if="settingStore.fontSettingStyle === 'multi'"
             :value="fontFamilyToArray(settingStore.globalFont)"
-            @update:value="
-              (value: string[]) => (settingStore.globalFont = fontArrayToFamily(value))
-            "
+            @update:value="(val: string[]) => (settingStore.globalFont = fontArrayToFamily(val))"
             :options="getOptions('globalFont')"
             class="set"
             filterable
@@ -69,7 +67,8 @@
           />
           <n-select
             v-else-if="settingStore.fontSettingStyle === 'single'"
-            v-model:value="settingStore.globalFont"
+            :value="fontFamilyToDisplay(settingStore.globalFont)"
+            @update:value="(val) => (settingStore.globalFont = fontDisplayToFamily(val))"
             :options="getOptions('globalFont')"
             class="set"
             filterable
@@ -127,21 +126,70 @@
             multiple
             tag
             @update:value="
-              (value: string[]) => (desktopLyricConfig.fontFamily = fontArrayToFamily(value))
+              (val: string[]) => (desktopLyricConfig.fontFamily = fontArrayToFamily(val))
             "
           />
           <n-select
             v-else-if="settingStore.fontSettingStyle === 'single'"
-            :value="desktopLyricConfig.fontFamily"
+            :value="fontFamilyToDisplay(desktopLyricConfig.fontFamily)"
             :options="getOptions('desktop')"
             class="set"
             filterable
             @update:value="
               (val) => {
-                desktopLyricConfig.fontFamily = val;
+                desktopLyricConfig.fontFamily = fontDisplayToFamily(val);
                 saveDesktopLyricConfig();
               }
             "
+          />
+        </n-flex>
+      </n-card>
+      <n-card class="set-item" :class="{ 'input-mode': isInputMode }">
+        <div class="label">
+          <div class="label-header">
+            <div class="info" style="display: flex; flex-direction: column">
+              <n-text class="name">任务栏歌词字体</n-text>
+              <n-text class="tip" :depth="3"> 任务栏歌词使用的字体 </n-text>
+            </div>
+            <Transition name="fade" mode="out-in">
+              <n-button
+                :disabled="taskbarFontFamily === 'system-ui'"
+                type="primary"
+                strong
+                secondary
+                @click="saveTaskbarLyricFont('system-ui')"
+              >
+                恢复默认
+              </n-button>
+            </Transition>
+          </div>
+        </div>
+        <n-flex align="center">
+          <s-input
+            v-if="settingStore.fontSettingStyle === 'custom'"
+            :value="taskbarFontFamily"
+            :update-value-on-input="false"
+            placeholder="输入字体名称"
+            class="set"
+            @update:value="(val) => saveTaskbarLyricFont(val)"
+          />
+          <n-select
+            v-else-if="settingStore.fontSettingStyle === 'multi'"
+            :value="fontFamilyToArray(taskbarFontFamily)"
+            :options="getOptions('desktop')"
+            class="set"
+            filterable
+            multiple
+            tag
+            @update:value="(val: string[]) => saveTaskbarLyricFont(fontArrayToFamily(val))"
+          />
+          <n-select
+            v-else-if="settingStore.fontSettingStyle === 'single'"
+            :value="fontFamilyToDisplay(taskbarFontFamily)"
+            :options="getOptions('desktop')"
+            class="set"
+            filterable
+            @update:value="(val) => saveTaskbarLyricFont(fontDisplayToFamily(val))"
           />
         </n-flex>
       </n-card>
@@ -185,7 +233,7 @@
             v-else-if="settingStore.fontSettingStyle === 'multi'"
             :value="fontFamilyToArray(settingStore[font.keySetting])"
             @update:value="
-              (value: string[]) => (settingStore[font.keySetting] = fontArrayToFamily(value))
+              (val: string[]) => (settingStore[font.keySetting] = fontArrayToFamily(val))
             "
             :options="getOptions(font.keySetting)"
             class="set"
@@ -195,7 +243,8 @@
           />
           <n-select
             v-else-if="settingStore.fontSettingStyle === 'single'"
-            v-model:value="settingStore[font.keySetting]"
+            :value="fontFamilyToDisplay(settingStore[font.keySetting])"
+            @update:value="(val) => (settingStore[font.keySetting] = fontDisplayToFamily(val))"
             :options="getOptions(font.keySetting)"
             class="set"
             filterable
@@ -208,6 +257,7 @@
 
 <script setup lang="ts">
 import { useSettingStore } from "@/stores";
+import { TASKBAR_IPC_CHANNELS } from "@/types/shared";
 import { isElectron } from "@/utils/env";
 import type { SelectOption } from "naive-ui";
 import { lyricFontConfigs } from "@/utils/lyric/lyricFontConfig";
@@ -217,9 +267,10 @@ import { cloneDeep, isEqual } from "lodash-es";
 
 const settingStore = useSettingStore();
 
+// 任务栏歌词字体
+const taskbarFontFamily = ref("system-ui");
 // 系统字体选项
 const systemFonts = ref<SelectOption[]>([]);
-
 // 桌面歌词配置
 const desktopLyricConfig = reactive<LyricConfig>({ ...defaultDesktopLyricConfig });
 
@@ -274,6 +325,51 @@ const getAllSystemFonts = async () => {
 };
 
 /**
+ * 字符串是否拥有在开头和结尾的成对引号
+ * @note 不移除首尾空格，因为在下面的所有调用场景，都会先移除首尾空格
+ * @param s 字符串
+ * @returns 是否拥有成对引号
+ */
+const hasPairedQuotes = (s: string): boolean => {
+  const l = s.length;
+  if (l < 2) return false;
+  if (s.startsWith('"')) {
+    if (s.indexOf('"', 1) === l - 1) return true;
+  } else if (s.startsWith("'")) {
+    if (s.indexOf("'", 1) === l - 1) return true;
+  }
+  return false;
+};
+
+/**
+ * 将 Font Family 字符串转换为用户可见字符串
+ * @param fontFamily Font Family 字符串
+ * @return 用户可见字符串
+ */
+const fontFamilyToDisplay = (fontFamily: string): string => {
+  // 移除首尾空格
+  fontFamily = fontFamily.trim();
+  // 移除引号
+  if (hasPairedQuotes(fontFamily)) {
+    fontFamily = fontFamily.substring(1, fontFamily.length - 1);
+  }
+  return fontFamily.trim();
+};
+
+/**
+ * 用户可见字符串转换为 Font Family 字符串
+ * @param display 用户可见字符串（单一字体）
+ * @return Font Family 字符串
+ */
+const fontDisplayToFamily = (display: string): string => {
+  display = display.trim();
+  if ((display.includes(",") || display.includes(" ")) && !hasPairedQuotes(display)) {
+    return `"${display}"`;
+  }
+  return display;
+};
+
+/**
  * 字体字符串转数组
  * @param fontFamily 字体字符串
  * @returns 字体数组
@@ -284,17 +380,7 @@ const fontFamilyToArray = (fontFamily: string): string[] => {
   const matches = fontFamily.match(regex);
   if (!matches) return [];
 
-  return matches
-    .map((s) => {
-      // 移除首尾空格
-      s = s.trim();
-      // 移除引号
-      if (s.match(/^"|^'/)) {
-        s = s.substring(1, s.length - 1);
-      }
-      return s.trim();
-    })
-    .filter(Boolean);
+  return matches.map(fontFamilyToDisplay).filter(Boolean);
 };
 
 /**
@@ -303,18 +389,22 @@ const fontFamilyToArray = (fontFamily: string): string[] => {
  * @returns 字体字符串
  */
 const fontArrayToFamily = (fontArray: string[]): string => {
-  return fontArray
-    .map((font) => {
-      font = font.trim();
-      if ((font.includes(",") || font.includes(" ")) && !/^["'].*["']$/.test(font)) {
-        return `"${font}"`;
-      }
-      return font;
-    })
-    .join(", ");
+  return fontArray.map(fontDisplayToFamily).join(", ");
 };
 
 // 获取桌面歌词配置
+const getTaskbarLyricConfig = async () => {
+  if (!isElectron) return;
+  const config = await window.electron.ipcRenderer.invoke(TASKBAR_IPC_CHANNELS.GET_OPTION);
+  if (config?.fontFamily) taskbarFontFamily.value = config.fontFamily;
+};
+
+const saveTaskbarLyricFont = (fontFamily: string) => {
+  if (!isElectron) return;
+  taskbarFontFamily.value = fontFamily;
+  window.electron.ipcRenderer.send(TASKBAR_IPC_CHANNELS.SET_OPTION, { fontFamily }, true);
+};
+
 const getDesktopLyricConfig = async () => {
   if (!isElectron) return;
   const config = await window.electron.ipcRenderer.invoke("desktop-lyric:get-option");
@@ -348,6 +438,7 @@ const saveDesktopLyricConfig = (val?: string) => {
 onMounted(() => {
   getAllSystemFonts();
   getDesktopLyricConfig();
+  getTaskbarLyricConfig();
   window.electron.ipcRenderer.on("desktop-lyric:update-option", onLyricConfigUpdate);
 });
 

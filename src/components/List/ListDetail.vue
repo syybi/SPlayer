@@ -1,7 +1,7 @@
 <!-- 通用列表详情 -->
 <template>
   <div :class="['list-detail', { small: listScrolling }]">
-    <Transition name="fade" mode="out-in">
+    <Transition name="fade">
       <div v-if="detailData" class="detail">
         <div class="cover" v-if="!settingStore.hiddenCovers.list">
           <n-image
@@ -214,7 +214,16 @@
                     {{ detailData?.count }}
                   </n-text>
                 </n-tab>
-                <n-tab name="comments"> 评论 </n-tab>
+                <n-tab name="comments">
+                  评论
+                  <n-text
+                    v-if="detailData?.commentCount"
+                    class="count"
+                    depth="3"
+                  >
+                    {{ formatCommentCount(detailData.commentCount) }}
+                  </n-text>
+                </n-tab>
               </n-tabs>
             </n-flex>
           </n-flex>
@@ -234,7 +243,7 @@
 import type { CoverType, SongType } from "@/types/main";
 import type { DropdownOption } from "naive-ui";
 import { coverLoaded, formatNumber } from "@/utils/helper";
-import { removeBrackets } from "@/utils/format";
+import { removeBrackets, formatCommentCount } from "@/utils/format";
 import { renderToolbar } from "@/utils/meta";
 import { formatTimestamp } from "@/utils/time";
 import { openDescModal, openJumpArtist } from "@/utils/modal";
@@ -286,6 +295,14 @@ const settingStore = useSettingStore();
 
 // 当前 tab
 const currentTab = ref<"songs" | "comments">("songs");
+
+// 切换资源时重置 tab
+watch(
+  () => props.detailData?.id,
+  () => {
+    currentTab.value = "songs";
+  },
+);
 
 // 标题文本
 const titleText = computed(() => {

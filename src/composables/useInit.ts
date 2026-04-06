@@ -1,6 +1,5 @@
 import { mediaSessionManager } from "@/core/player/MediaSessionManager";
 import { usePlayerController } from "@/core/player/PlayerController";
-import { updateTaskbarConfig } from "@/core/player/PlayerIpc";
 import { useDownloadManager } from "@/core/resource/DownloadManager";
 import { useDataStore, useSettingStore, useShortcutStore, useStatusStore } from "@/stores";
 import { TASKBAR_IPC_CHANNELS } from "@/types/shared";
@@ -10,6 +9,9 @@ import { openUserAgreement } from "@/utils/modal";
 import { useEventListener } from "@vueuse/core";
 import { debounce } from "lodash-es";
 import { onMounted, watch } from "vue";
+
+/** 最终聚焦主窗口的延迟时间（毫秒） */
+const FINAL_FOCUS_DELAY_MS = 500;
 
 /**
  * 应用初始化时需要执行的操作
@@ -27,7 +29,7 @@ export const useInit = () => {
   // 事件监听
   initEventListener();
 
-  onMounted(async () => {
+    onMounted(async () => {
     // 检查并执行设置迁移
     settingStore.checkAndMigrate();
     // 打印版本信息
@@ -60,6 +62,13 @@ export const useInit = () => {
         statusStore.autoClose.endTime = 0;
       }
     }
+
+    // 监听设置变化以更新 ReplayGain
+    watch(
+      () => [settingStore.enableReplayGain, settingStore.replayGainMode],
+      () => player.applyReplayGain(),
+    );
+
     if (isElectron) {
       // 注册全局快捷键
       shortcutStore.registerAllShortcuts();
@@ -68,63 +77,29 @@ export const useInit = () => {
       // 显示窗口
       window.electron.ipcRenderer.send("win-loaded");
       // 同步任务栏歌词状态
-      window.electron.ipcRenderer.send("taskbar:toggle", statusStore.showTaskbarLyric);
+      const taskbarConfig = await window.electron.ipcRenderer.invoke(
+        TASKBAR_IPC_CHANNELS.GET_OPTION,
+      );
+      statusStore.showTaskbarLyric = taskbarConfig?.enabled ?? statusStore.showTaskbarLyric ?? false;
+      window.electron.ipcRenderer.send(
+        TASKBAR_IPC_CHANNELS.SET_OPTION,
+        { enabled: statusStore.showTaskbarLyric },
+        true,
+      );
       // 显示桌面歌词
       window.electron.ipcRenderer.send("desktop-lyric:toggle", statusStore.showDesktopLyric);
       // 检查更新
       if (settingStore.checkUpdateOnStart) window.electron.ipcRenderer.send("check-update", false);
-
-      // 启动时，如果启用macOS歌词，发送初始数据
+      // 如果启用macOS歌词，发送初始数据
       if (isMac && settingStore.macos.statusBarLyric.enabled) {
         window.electron.ipcRenderer.send(TASKBAR_IPC_CHANNELS.REQUEST_DATA);
       }
-
-      // 监听任务栏歌词设置
-      watch(
-        () => [
-          settingStore.taskbarLyricMaxWidth,
-          settingStore.taskbarLyricPosition,
-          settingStore.taskbarLyricAutoShrink,
-          settingStore.taskbarLyricMargin,
-          settingStore.taskbarLyricMinWidth,
-        ],
-        () => {
-          updateTaskbarConfig({
-            maxWidth: settingStore.taskbarLyricMaxWidth,
-            position: settingStore.taskbarLyricPosition,
-            autoShrink: settingStore.taskbarLyricAutoShrink,
-            margin: settingStore.taskbarLyricMargin,
-            minWidth: settingStore.taskbarLyricMinWidth,
-          });
-        },
-      );
-
-      watch(
-        () => [
-          settingStore.taskbarLyricShowCover,
-          settingStore.LyricFont,
-          settingStore.globalFont,
-          settingStore.taskbarLyricFontWeight,
-          settingStore.taskbarLyricAnimationMode,
-          settingStore.taskbarLyricSingleLineMode,
-          settingStore.showTran,
-          settingStore.showRoma,
-          settingStore.taskbarLyricShowWhenPaused,
-        ],
-        () => {
-          updateTaskbarConfig({
-            showCover: settingStore.taskbarLyricShowCover,
-            fontFamily: settingStore.LyricFont,
-            globalFont: settingStore.globalFont,
-            fontWeight: settingStore.taskbarLyricFontWeight,
-            animationMode: settingStore.taskbarLyricAnimationMode,
-            singleLineMode: settingStore.taskbarLyricSingleLineMode,
-            showTranslation: settingStore.showTran,
-            showRomaji: settingStore.showRoma,
-            showWhenPaused: settingStore.taskbarLyricShowWhenPaused,
-          });
-        },
-      );
+      // 确保主窗口在最后获得焦点
+      if (statusStore.showDesktopLyric) {
+        setTimeout(() => {
+          window.electron.ipcRenderer.send("win-show-main");
+        }, FINAL_FOCUS_DELAY_MS);
+      }
     }
   });
 };

@@ -7,7 +7,9 @@ import type { LyricPriority, SongLyric } from "@/types/lyric";
 import type { SongType } from "@/types/main";
 import { isElectron } from "@/utils/env";
 import { applyBracketReplacement } from "@/utils/lyric/lyricFormat";
+import { applyProfanityUncensor } from "@/utils/lyric/lyricProfanity";
 import {
+  alignLyricLines,
   alignLyrics,
   isWordLevelFormat,
   parseQRCLyric,
@@ -18,6 +20,7 @@ import { parseLrc } from "@/utils/lyric/parseLrc";
 import { getConverter } from "@/utils/opencc";
 import { type LyricLine, parseTTML, parseYrc } from "@applemusic-like-lyrics/lyric";
 import { cloneDeep, isEmpty } from "lodash-es";
+import { attachTtmlBgLines, cleanTTMLTranslations } from "@/utils/lyric/parseTTML";
 
 interface LyricFetchResult {
   data: SongLyric;
@@ -27,6 +30,10 @@ interface LyricFetchResult {
   };
 }
 
+/**
+ * 歌词管理器
+ * 负责歌词的获取、缓存、预加载等操作
+ */
 class LyricManager {
   /**
    * 在线歌词请求序列
@@ -102,48 +109,6 @@ class LyricManager {
     } catch (error) {
       console.error("写入歌词缓存失败:", error);
     }
-  }
-
-  /**
-   * 对齐本地歌词
-   * @param lyricData 本地歌词数据
-   * @returns 对齐后的本地歌词数据
-   */
-  private alignLocalLyrics(lyricData: SongLyric): SongLyric {
-    // 同一时间的两/三行分别作为主句、翻译、音译
-    const toTime = (line: LyricLine) => Number(line?.startTime ?? line?.words?.[0]?.startTime ?? 0);
-    // 获取结束时间
-    const toEndTime = (line: LyricLine) =>
-      Number(line?.endTime ?? line?.words?.[line?.words?.length - 1]?.endTime ?? 0);
-    // 取内容
-    const toText = (line: LyricLine) => String(line?.words?.[0]?.word || "").trim();
-    const lrc = lyricData.lrcData || [];
-    if (!lrc.length) return lyricData;
-    // 按开始时间分组，时间差 < 0.6s 视为同组
-    const sorted = [...lrc].sort((a, b) => toTime(a) - toTime(b));
-    const groups: LyricLine[][] = [];
-    for (const line of sorted) {
-      const st = toTime(line);
-      const last = groups[groups.length - 1]?.[0];
-      if (last && Math.abs(st - toTime(last)) < 0.6) groups[groups.length - 1].push(line);
-      else groups.push([line]);
-    }
-    // 组装：第 1 行主句；第 2 行翻译；第 3 行音译；不调整时长
-    const aligned = groups.map((group) => {
-      const base = { ...group[0] } as LyricLine;
-      const tran = group[1];
-      const roma = group[2];
-      if (!base.translatedLyric && tran) {
-        base.translatedLyric = toText(tran);
-        base.endTime = Math.max(toEndTime(base), toEndTime(tran));
-      }
-      if (!base.romanLyric && roma) {
-        base.romanLyric = toText(roma);
-        base.endTime = Math.max(toEndTime(base), toEndTime(roma));
-      }
-      return base;
-    });
-    return { lrcData: aligned, yrcData: lyricData.yrcData };
   }
 
   /**
@@ -317,7 +282,7 @@ class LyricManager {
         }
       }
       if (!ttmlContent || typeof ttmlContent !== "string") return;
-      const sorted = this.cleanTTMLTranslations(ttmlContent);
+      const sorted = cleanTTMLTranslations(ttmlContent);
       const parsed = parseTTML(sorted);
       const lines = parsed?.lines || [];
       if (!lines.length) return;
@@ -454,7 +419,7 @@ class LyricManager {
       }
       // TTML 直接返回
       if (format === "ttml") {
-        const sorted = this.cleanTTMLTranslations(lyric);
+        const sorted = cleanTTMLTranslations(lyric);
         const ttml = parseTTML(sorted);
         const lines = ttml?.lines || [];
         return {
@@ -472,7 +437,7 @@ class LyricManager {
         };
       }
       // 普通格式
-      let aligned = this.alignLocalLyrics({ lrcData: parsedLines, yrcData: [] });
+      let aligned: SongLyric = { lrcData: alignLyricLines(parsedLines), yrcData: [] };
       let usingQRCLyric = false;
       // 如果开启了本地歌曲 QQ 音乐匹配，尝试获取逐字歌词
       if (settingStore.localLyricQQMusicMatch && song) {
@@ -493,77 +458,6 @@ class LyricManager {
     } catch {
       return defaultResult;
     }
-  }
-
-  /**
-   * 清洗 TTML 中不需要的翻译
-   * @param ttmlContent 原始 TTML 内容
-   * @returns 清洗后的 TTML 内容
-   */
-  // 当支持 i18n 之后，需要对其中的部分函数进行修改，使其优选逻辑能够根据用户界面语言变化
-  private cleanTTMLTranslations(
-    // 一般没有多种音译，故不对音译部分进行清洗，如果需要请另写处理函数
-    ttmlContent: string,
-  ): string {
-    const lang_counter = (ttml_text: string) => {
-      // 使用正则匹配所有 xml:lang="xx-XX" 格式的字符串
-      const langRegex = /(?<=<(span|translation)[^<>]+)xml:lang="([^"]+)"/g;
-      const matches = ttml_text.matchAll(langRegex);
-
-      // 提取匹配结果并去重
-      const langSet = new Set<string>();
-      for (const match of matches) {
-        if (match[2]) langSet.add(match[2]);
-      }
-
-      return Array.from(langSet);
-    };
-
-    const lang_filter = (langs: string[]): string | null => {
-      if (langs.length <= 1) return null;
-
-      const lang_matcher = (target: string) => {
-        return langs.find((lang) => {
-          try {
-            return new Intl.Locale(lang).maximize().script === target;
-          } catch {
-            return false;
-          }
-        });
-      };
-
-      const hans_matched = lang_matcher("Hans");
-      if (hans_matched) return hans_matched;
-
-      const hant_matched = lang_matcher("Hant");
-      if (hant_matched) return hant_matched;
-
-      const major = langs.find((key) => key.startsWith("zh"));
-      if (major) return major;
-
-      return langs[0];
-    };
-
-    const ttml_cleaner = (ttml_text: string, major_lang: string | null): string => {
-      // 如果没有指定主语言，直接返回原文本（或者根据需求返回空）
-      if (major_lang === null) return ttml_text;
-
-      /**
-       * 替换逻辑回调函数
-       * @param match 完整匹配到的标签字符串 (例如 <code><span ...>...<\/span></code>)
-       * @param lang 正则中第一个捕获组匹配到的语言代码 (例如 "ja-JP")
-       */
-      const replacer = (match: string, lang: string) => (lang === major_lang ? match : "");
-      const translationRegex = /<translation[^>]+xml:lang="([^"]+)"[^>]*>[\s\S]*?<\/translation>/g;
-      const spanRegex = /<span[^>]+xml:lang="([^" ]+)"[^>]*>[\s\S]*?<\/span>/g;
-      return ttml_text.replace(translationRegex, replacer).replace(spanRegex, replacer);
-    };
-
-    const context_lang = lang_counter(ttmlContent);
-    const major = lang_filter(context_lang);
-    const cleaned_ttml = ttml_cleaner(ttmlContent, major);
-
-    return cleaned_ttml.replace(/\n\s*/g, "");
   }
 
   /**
@@ -612,7 +506,9 @@ class LyricManager {
       try {
         const ttmlContent = typeof ttml === "string" ? ttml : "";
         if (ttmlContent) {
-          ttmlLines = parseTTML(this.cleanTTMLTranslations(ttmlContent)).lines || [];
+          const cleaned = cleanTTMLTranslations(ttmlContent);
+          const raw = parseTTML(cleaned).lines || [];
+          ttmlLines = raw;
           console.log("检测到本地TTML歌词覆盖", ttmlLines);
         }
       } catch (err) {
@@ -806,10 +702,12 @@ class LyricManager {
   private setFinalLyric(lyricData: SongLyric, req: number) {
     const musicStore = useMusicStore();
     const statusStore = useStatusStore();
+    const settingStore = useSettingStore();
     // 若非本次
     if (this.activeLyricReq !== req) return;
     // 应用括号替换
     lyricData = applyBracketReplacement(lyricData);
+    lyricData = applyProfanityUncensor(lyricData, settingStore.uncensorMaskedProfanity);
     // 规范化时间
     this.normalizeLyricLines(lyricData.yrcData);
     this.normalizeLyricLines(lyricData.lrcData);
@@ -834,7 +732,7 @@ class LyricManager {
       statusStore.lyricLoading = false;
       // 单曲循环时，歌词数据未变，需通知桌面歌词取消加载状态
       if (isElectron) {
-        window.electron.ipcRenderer.send("update-desktop-lyric-data", {
+        window.electron.ipcRenderer.send("desktop-lyric:update-data", {
           lyricLoading: false,
         });
       }
@@ -867,11 +765,8 @@ class LyricManager {
           if (isWordLevelFormat(format)) {
             result.yrcData = lines;
           } else {
-            result.lrcData = lines;
             // 应用翻译对齐逻辑
-            const aligned = this.alignLocalLyrics(result);
-            result.lrcData = aligned.lrcData;
-            result.yrcData = aligned.yrcData;
+            result.lrcData = alignLyricLines(lines);
           }
         }
       }
@@ -948,7 +843,7 @@ class LyricManager {
         const overrideResult = await this.fetchLocalOverrideLyric(song.id);
         if (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData)) {
           // 对齐
-          overrideResult.data = this.alignLocalLyrics(overrideResult.data);
+          overrideResult.data.lrcData = alignLyricLines(overrideResult.data.lrcData);
           fetchResult = overrideResult;
         } else if (song.path) {
           // 本地文件
@@ -994,6 +889,26 @@ class LyricManager {
     } catch (e) {
       console.warn(`Lyrics prefetch failed: [${song.id}]`, e);
     }
+  }
+
+  /**
+   * 获取原始 TTML 文本（如果存在）
+   * @param id 歌曲 ID
+   */
+  public async getRawTtml(id: number | string): Promise<string | null> {
+    if (typeof id !== "number") return null;
+    const ttml = await this.getRawLyricCache(id, "ttml");
+    if (ttml) return cleanTTMLTranslations(ttml);
+    return null;
+  }
+
+  /**
+   * 为任务栏歌词处理 TTML（注入 BG）
+   * @param lines 原始解析后的歌词行
+   * @param ttml 原始 TTML 文本
+   */
+  public processTtmlForTaskbar(lines: LyricLine[], ttml: string): LyricLine[] {
+    return attachTtmlBgLines(ttml, cloneDeep(lines));
   }
 }
 

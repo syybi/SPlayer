@@ -1,11 +1,20 @@
-import type { IExtendedAudioContext } from "./BaseAudioPlayer";
+import { useSettingStore } from "@/stores";
+import type { IExtendedAudioContext } from "@/types/audio/context";
 
+/** 共享音频上下文 */
 let sharedContext: IExtendedAudioContext | null = null;
+/** 主输入节点 */
 let masterInput: GainNode | null = null;
+/** 主限制器节点 */
 let masterLimiter: DynamicsCompressorNode | null = null;
 
+/**
+ * 获取共享音频上下文
+ * @returns 共享音频上下文
+ */
 export const getSharedAudioContext = (): IExtendedAudioContext => {
   if (!sharedContext) {
+    const settingStore = useSettingStore();
     const AudioContextClass =
       window.AudioContext ||
       (
@@ -13,11 +22,17 @@ export const getSharedAudioContext = (): IExtendedAudioContext => {
           webkitAudioContext: typeof AudioContext;
         }
       ).webkitAudioContext;
-    sharedContext = new AudioContextClass() as IExtendedAudioContext;
+    sharedContext = new AudioContextClass({
+      latencyHint: settingStore.audioLatencyHint,
+    }) as IExtendedAudioContext;
   }
   return sharedContext;
 };
 
+/**
+ * 获取主输入节点
+ * @returns 主输入节点
+ */
 export const getSharedMasterInput = (): GainNode => {
   const ctx = getSharedAudioContext();
   if (!masterInput) {
@@ -36,6 +51,10 @@ export const getSharedMasterInput = (): GainNode => {
   return masterInput;
 };
 
+/**
+ * 获取主限制器节点
+ * @returns 主限制器节点
+ */
 export const getSharedMasterLimiter = (): DynamicsCompressorNode | null => {
   return masterLimiter;
 };

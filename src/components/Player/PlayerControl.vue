@@ -40,17 +40,20 @@
             <SvgIcon name="Download" />
           </div>
           <!-- 显示评论 -->
-          <div
-            v-if="
-              !musicStore.playSong.path &&
-              !statusStore.pureLyricMode &&
-              settingStore.fullscreenPlayerElements.comments
+          <n-badge
+            :value="formatCommentCount(statusStore.songCommentCount)"
+            v-if="showCommentButton"
+            :show="
+              statusStore.songCommentCount > 0 && settingStore.fullscreenPlayerElements.commentCount
             "
-            class="menu-icon"
-            @click.stop="statusStore.showPlayerComment = !statusStore.showPlayerComment"
           >
-            <SvgIcon :depth="statusStore.showPlayerComment ? 1 : 3" name="Message" />
-          </div>
+            <div
+              class="menu-icon"
+              @click.stop="statusStore.showPlayerComment = !statusStore.showPlayerComment"
+            >
+              <SvgIcon :depth="statusStore.showPlayerComment ? 1 : 3" name="Message" />
+            </div>
+          </n-badge>
         </n-flex>
         <div class="center">
           <div class="btn">
@@ -68,7 +71,12 @@
             <div
               v-if="statusStore.personalFmMode"
               class="btn-icon"
-              v-debounce="() => songManager.personalFMTrash(musicStore.personalFMSong?.id)"
+              v-debounce="
+                () =>
+                  songManager.personalFMTrash(musicStore.personalFMSong?.id, () =>
+                    player.nextOrPrev('next'),
+                  )
+              "
             >
               <SvgIcon class="icon" :size="18" name="ThumbDown" />
             </div>
@@ -146,6 +154,8 @@ import { useDataStore, useMusicStore, useStatusStore, useSettingStore } from "@/
 import { toLikeSong } from "@/utils/auth";
 import { useTimeFormat } from "@/composables/useTimeFormat";
 import { openDownloadSong, openPlaylistAdd } from "@/utils/modal";
+import { getComment } from "@/api/comment";
+import { formatCommentCount } from "@/utils/format";
 
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
@@ -156,6 +166,53 @@ const songManager = useSongManager();
 const player = usePlayerController();
 
 const { timeDisplay, toggleTimeFormat } = useTimeFormat();
+
+// 获取评论数量
+const fetchCommentCount = async () => {
+  if (!showCommentButton.value || !settingStore.fullscreenPlayerElements.commentCount) return;
+  const id = musicStore.playSong.id;
+  if (!id || typeof id !== "number" || musicStore.playSong.path) return;
+  try {
+    const type = musicStore.playSong.type === "radio" ? 4 : 0;
+    const result = await getComment(id, type as 0 | 4, 1, 1);
+    if (result.data?.totalCount != null) {
+      statusStore.songCommentCount = result.data.totalCount;
+    }
+  } catch {
+    // 忽略错误
+  }
+};
+
+const showCommentButton = computed(
+  () =>
+    !musicStore.playSong.path &&
+    !statusStore.pureLyricMode &&
+    settingStore.fullscreenPlayerElements.comments,
+);
+
+// 歌曲变化时获取评论数量
+watch(
+  () => musicStore.playSong.id,
+  () => {
+    statusStore.songCommentCount = 0;
+    fetchCommentCount();
+  },
+);
+
+watch(
+  () => settingStore.fullscreenPlayerElements.commentCount,
+  (val) => {
+    if (val && statusStore.songCommentCount === 0) {
+      fetchCommentCount();
+    }
+  },
+);
+
+onMounted(() => {
+  if (musicStore.playSong.id && !musicStore.playSong.path) {
+    fetchCommentCount();
+  }
+});
 
 const showAutomixFx = ref(false);
 let automixFxTimer: number | null = null;
@@ -182,38 +239,38 @@ watch(
 );
 
 watch(
-    () => statusStore.automixEndedSeq,
-    (seq, prev) => {
-      if (!seq || seq === prev) return;
-      if (showAutomixLabel.value) {
-        if (automixFxTimer !== null) {
-          window.clearTimeout(automixFxTimer);
-        }
-        automixFxTimer = window.setTimeout(() => {
-          showAutomixLabel.value = false;
-          showAutomixFx.value = false;
-          automixFxTimer = null;
-        }, 2000); // 混音结束后保留 2 秒再淡出
+  () => statusStore.automixEndedSeq,
+  (seq, prev) => {
+    if (!seq || seq === prev) return;
+    if (showAutomixLabel.value) {
+      if (automixFxTimer !== null) {
+        window.clearTimeout(automixFxTimer);
       }
-    },
-  );
+      automixFxTimer = window.setTimeout(() => {
+        showAutomixLabel.value = false;
+        showAutomixFx.value = false;
+        automixFxTimer = null;
+      }, 2000); // 混音结束后保留 2 秒再淡出
+    }
+  },
+);
 
-  // 监听歌曲变化，延迟关闭混音显示和辉光
-  watch(
-    () => musicStore.playSong?.id,
-    (_newId, _oldId) => {
-      if (showAutomixLabel.value) {
-        if (automixFxTimer !== null) {
-          window.clearTimeout(automixFxTimer);
-        }
-        automixFxTimer = window.setTimeout(() => {
-          showAutomixLabel.value = false;
-          showAutomixFx.value = false;
-          automixFxTimer = null;
-        }, 2000); // 切歌后保留 2 秒再淡出
+// 监听歌曲变化，延迟关闭混音显示和辉光
+watch(
+  () => musicStore.playSong?.id,
+  (_newId, _oldId) => {
+    if (showAutomixLabel.value) {
+      if (automixFxTimer !== null) {
+        window.clearTimeout(automixFxTimer);
       }
-    },
-  );
+      automixFxTimer = window.setTimeout(() => {
+        showAutomixLabel.value = false;
+        showAutomixFx.value = false;
+        automixFxTimer = null;
+      }, 2000); // 切歌后保留 2 秒再淡出
+    }
+  },
+);
 
 const onFxAnimationEnd = () => {
   // 移除之前的单次动画结束逻辑，因为现在是 infinite 循环，直到 showAutomixFx 为 false
@@ -267,6 +324,12 @@ onBeforeUnmount(() => {
       }
       &:active {
         transform: scale(1);
+      }
+    }
+    :deep(.n-badge-sup) {
+      background-color: rgba(var(--main-cover-color), 0.14);
+      .n-base-slot-machine {
+        color: rgb(var(--main-cover-color));
       }
     }
     :deep(.right-menu) {

@@ -35,7 +35,8 @@ export const useSongMenu = () => {
   const localStore = useLocalStore();
 
   // 删除本地歌曲
-  const deleteLocalSong = (song: SongType, emit: (event: "removeSong", args: any[]) => void) => {
+  const deleteLocalSong = (song: SongType, emit?: (event: "removeSong", args: any[]) => void) => {
+    if (emit === undefined) return;
     if (!song.path) return;
     window.$dialog.warning({
       title: "确认删除",
@@ -148,13 +149,24 @@ export const useSongMenu = () => {
     }
   };
 
+  // 判断两首歌是否相同
+  const isSameSong = (song1: SongType, song2: SongType): boolean => {
+    if (song1.id != null && song2.id != null) {
+      return song1.id === song2.id;
+    }
+    if (song1.path && song2.path) {
+      return song1.path === song2.path;
+    }
+    return false;
+  };
+
   // 生成菜单选项
   const getMenuOptions = (
     song: SongType,
-    index: number,
+    index: number = -1,
     playListId: number = 0,
     isDailyRecommend: boolean = false,
-    emit: (event: "removeSong", args: any[]) => void,
+    emit?: (event: "removeSong", args: any[]) => void,
   ): DropdownOption[] => {
     const userPlaylistsData = dataStore.userLikeData.playlists?.filter(
       (pl) => pl.userId === dataStore.userData.userId,
@@ -164,7 +176,7 @@ export const useSongMenu = () => {
     const isCloud = router.currentRoute.value.name === "cloud";
     const isLocal = !!song?.path;
     const isLoginNormal = isLogin() === 1;
-    const isCurrent = statusStore.playIndex === index;
+    const isCurrent = isSameSong(musicStore.playSong, song);
     const isLocalPlaylist = localStore.isLocalPlaylist(playListId);
     const isUserPlaylist =
       (!!playListId && userPlaylistsData.some((pl) => pl.id === playListId)) || isLocalPlaylist;
@@ -206,6 +218,18 @@ export const useSongMenu = () => {
           onClick: () => router.push({ name: "video", query: { id: song.mv, type: "mv" } }),
         },
         icon: renderIcon("Video", { size: 18 }),
+      },
+      {
+        key: "comment",
+        label: "查看评论",
+        show: !isLocal && type !== "streaming",
+        props: {
+          onClick: () => {
+            const commentType = type === "radio" ? 4 : 0;
+            router.push({ name: "comment", query: { id: song.id, type: commentType } });
+          },
+        },
+        icon: renderIcon("Message", { size: 18 }),
       },
       {
         key: "line-1",
@@ -263,8 +287,7 @@ export const useSongMenu = () => {
             label: `分享${type === "song" ? "歌曲" : "节目"}链接`,
             show: !isLocal && type !== "streaming",
             props: {
-              onClick: () =>
-                copyData(getShareUrl(type, song.id), "已复制分享链接到剪贴板"),
+              onClick: () => copyData(getShareUrl(type, song.id), "已复制分享链接到剪贴板"),
             },
             icon: renderIcon("Share", { size: 18 }),
           },
@@ -310,13 +333,14 @@ export const useSongMenu = () => {
         label: "从歌单中删除",
         show:
           settingStore.contextMenuOptions.deleteFromPlaylist &&
+          emit !== undefined &&
           isUserPlaylist &&
           (isLocalPlaylist || isLoginNormal) &&
           !isCloud,
         props: {
           onClick: () =>
             deleteSongs(playListId!, [song.id], {
-              callback: () => emit("removeSong", [song.id]),
+              callback: () => emit?.("removeSong", [song.id]),
               songName: song.name,
             }),
         },
@@ -334,7 +358,11 @@ export const useSongMenu = () => {
       {
         key: "delete-local",
         label: "从本地磁盘中删除",
-        show: settingStore.contextMenuOptions.deleteFromLocal && isLocal && !isCurrent,
+        show:
+          settingStore.contextMenuOptions.deleteFromLocal &&
+          emit !== undefined &&
+          isLocal &&
+          !isCurrent,
         props: {
           onClick: () => deleteLocalSong(song, emit),
         },

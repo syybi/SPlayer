@@ -29,41 +29,37 @@
         </n-button>
       </template>
     </ListDetail>
-    <Transition name="fade" mode="out-in">
-      <!-- 歌曲列表 -->
-      <template v-if="currentTab === 'songs'">
-        <SongList
-          v-if="!searchValue || searchData?.length"
-          :data="detailData?.id === albumId ? displayData : []"
-          :loading="loading"
-          :height="songListHeight"
-          :doubleClickAction="searchData?.length ? 'add' : 'all'"
-          hidden-album
-          @scroll="handleListScroll"
-        />
-        <n-empty
-          v-else
-          :description="`搜不到关于 ${searchValue} 的任何歌曲呀`"
-          style="margin-top: 60px"
-          size="large"
-        >
-          <template #icon>
-            <SvgIcon name="SearchOff" />
-          </template>
-        </n-empty>
-      </template>
-      <!-- 评论 -->
-      <template v-else>
-        <ListComment :id="albumId" :type="3" :height="songListHeight" />
-      </template>
-    </Transition>
+    <!-- 歌曲列表 -->
+    <template v-if="currentTab === 'songs'">
+      <SongList
+        v-if="!searchValue || searchData?.length"
+        :data="detailData?.id === albumId ? displayData : []"
+        :loading="loading"
+        :height="songListHeight"
+        :doubleClickAction="searchData?.length ? 'add' : 'all'"
+        hidden-album
+        @scroll="handleListScroll"
+      />
+      <n-empty
+        v-else
+        :description="`搜不到关于 ${searchValue} 的任何歌曲呀`"
+        style="margin-top: 60px"
+        size="large"
+      >
+        <template #icon>
+          <SvgIcon name="SearchOff" />
+        </template>
+      </n-empty>
+    </template>
+    <!-- 评论 -->
+    <ListComment v-show="currentTab === 'comments'" :id="albumId" :type="3" :height="songListHeight" />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { DropdownOption } from "naive-ui";
 import { songDetail } from "@/api/song";
-import { albumDetail } from "@/api/album";
+import { albumDetail, albumDetailDynamic } from "@/api/album";
 import { formatCoverList, formatSongsList } from "@/utils/format";
 import { renderIcon, copyData, getShareUrl } from "@/utils/helper";
 import { openBatchList } from "@/utils/modal";
@@ -162,11 +158,7 @@ const moreOptions = computed<DropdownOption[]>(() => [
     label: "复制分享链接",
     key: "copy",
     props: {
-      onClick: () =>
-        copyData(
-          getShareUrl("album", albumId.value),
-          "已复制分享链接到剪贴板",
-        ),
+      onClick: () => copyData(getShareUrl("album", albumId.value), "已复制分享链接到剪贴板"),
     },
     icon: renderIcon("Share"),
   },
@@ -189,29 +181,28 @@ const getAlbumDetail = async (id: number, refresh: boolean = false) => {
   currentRequestId.value = id;
   setLoading(true);
   clearSearch();
-
-  // 1. 尝试读取缓存
+  // 尝试读取缓存
   if (!refresh) {
     const cached = await loadCache("album", id);
     if (cached) {
       setDetailData(cached.detail);
       setListData(cached.songs);
       setLoading(false);
-
+      // 获取专辑评论等动态数据
+      fetchAlbumDynamic(id);
       // 后台检查更新
       backgroundCheck(id, cached);
       return;
     }
   }
-
-  if (!refresh && detailData.value?.id !== id) {
-    resetData(true);
-  }
+  if (!refresh && detailData.value?.id !== id) resetData(true);
   // 获取专辑详情
   const detail = await albumDetail(id);
   // 检查是否仍然是当前请求的专辑
   if (currentRequestId.value !== id) return;
   setDetailData(formatCoverList(detail.album)[0]);
+  // 获取专辑评论等动态数据
+  fetchAlbumDynamic(id);
   // 获取专辑歌曲
   const ids: number[] = detail.songs.map((song: any) => song.id as number);
   const result = await songDetail(ids);
@@ -219,10 +210,8 @@ const getAlbumDetail = async (id: number, refresh: boolean = false) => {
   if (currentRequestId.value !== id) return;
   const songs = formatSongsList(result.songs);
   setListData(songs);
-
   // 保存缓存
   saveCache("album", id, detailData.value!, songs);
-
   setLoading(false);
 };
 
@@ -232,9 +221,7 @@ const backgroundCheck = async (id: number, cached: ListCacheData) => {
     const detail = await albumDetail(id);
     // 检查是否仍然是当前请求的专辑
     if (currentRequestId.value !== id) return;
-
     const latestDetail = formatCoverList(detail.album)[0];
-
     if (checkNeedsUpdate(cached, latestDetail)) {
       console.log("Album cache expired, refreshing...");
       getAlbumDetail(id, true);
@@ -255,6 +242,19 @@ const handleTabChange = (value: "songs" | "comments") => {
   currentTab.value = value;
 };
 
+// 获取专辑动态信息（评论数等）
+const fetchAlbumDynamic = async (id: number) => {
+  try {
+    const result = await albumDetailDynamic(id);
+    if (!detailData.value || detailData.value.id !== id) return;
+    if (typeof result.commentCount === "number") {
+      detailData.value.commentCount = result.commentCount;
+    }
+  } catch {
+    // 忽略错误
+  }
+};
+
 // 播放全部歌曲
 const playAllSongs = useDebounceFn(() => {
   if (!detailData.value || !displayData.value?.length) return;
@@ -263,6 +263,7 @@ const playAllSongs = useDebounceFn(() => {
 
 onBeforeRouteUpdate((to) => {
   clearSearch();
+  currentTab.value = "songs";
   const id = Number(to.query.id as string);
   if (id) getAlbumDetail(id);
 });

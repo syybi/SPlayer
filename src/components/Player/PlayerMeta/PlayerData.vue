@@ -106,7 +106,9 @@
       <div v-else class="artists">
         <SvgIcon :depth="3" name="Artist" size="20" />
         <div class="ar-list">
-          <span class="ar">{{ musicStore.playSong.dj?.creator || "未知艺术家" }}</span>
+          <span class="ar" @click="showCreatorTip">
+            {{ musicStore.playSong.dj?.creator || "未知艺术家" }}
+          </span>
         </div>
       </div>
       <!-- 专辑 -->
@@ -135,7 +137,7 @@
       <div
         v-if="musicStore.playSong.type === 'radio'"
         class="dj"
-        @click="jumpPage({ name: 'dj', query: { id: musicStore.playSong.dj?.id } })"
+        @click="jumpToRadio"
       >
         <SvgIcon :depth="3" name="Podcast" size="20" />
         <span class="name-text text-hidden">{{ musicStore.playSong.dj?.name || "播客电台" }}</span>
@@ -152,6 +154,7 @@ import { removeBrackets } from "@/utils/format";
 import { SongUnlockServer } from "@/core/player/SongManager";
 import { useLyricManager } from "@/core/player/LyricManager";
 import { usePlayerController } from "@/core/player/PlayerController";
+import { radioProgramDetail } from "@/api/radio";
 const props = defineProps<{
   /** 数据居中 */
   center?: boolean;
@@ -168,7 +171,7 @@ const player = usePlayerController();
 
 // 当前歌词模式
 const lyricMode = computed(() => {
-  if (settingStore.showYrc) {
+  if (settingStore.showWordLyrics) {
     if (statusStore.usingTTMLLyric) return "TTML";
     if (musicStore.isHasYrc) {
       // 如果是从QQ音乐获取的歌词，显示QRC
@@ -253,6 +256,36 @@ const jumpPage = debounce(
     trailing: false,
   },
 );
+
+// 暂不支持查看主播主页
+const showCreatorTip = () => window.$message.info("暂不支持查看主播主页");
+
+// 跳转到播客电台页面
+const jumpToRadio = debounce(
+  async () => {
+    const song = musicStore.playSong;
+    let radioId = song.dj?.radioId;
+    // 兼容旧数据：通过节目详情 API 获取电台 ID
+    if (!radioId && song.id) {
+      try {
+        const res = await radioProgramDetail(song.id);
+        radioId = res.program?.radio?.id;
+        // 回写避免重复请求
+        if (radioId && song.dj) song.dj.radioId = radioId;
+      } catch (_e) {
+        // ignore
+      }
+    }
+    if (!radioId) return;
+    statusStore.showFullPlayer = false;
+    router.push({ name: "radio", query: { id: radioId } });
+  },
+  300,
+  {
+    leading: true,
+    trailing: false,
+  },
+);
 </script>
 
 <style lang="scss" scoped>
@@ -263,6 +296,7 @@ const jumpPage = debounce(
   max-width: 50vh;
   margin-top: 24px;
   padding: 0 2px;
+  // mix-blend-mode: plus-lighter;
   .n-icon {
     color: rgb(var(--main-cover-color));
   }

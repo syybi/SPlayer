@@ -3,22 +3,21 @@ import { isElectron } from "@/utils/env";
 import { getPlaySongData } from "@/utils/format";
 import { msToS } from "@/utils/time";
 import type { SystemMediaEvent } from "@emi";
-import axios from "axios";
 import { throttle } from "lodash-es";
 import { usePlayerController } from "./PlayerController";
 import {
   enableDiscordRpc,
   sendMediaMetadata,
-  sendMediaPlaybackRate,
   sendMediaPlayMode,
   sendMediaPlayState,
+  sendMediaPlaybackRate,
+  sendMediaVolume,
   sendMediaTimeline,
   updateDiscordConfig,
 } from "./PlayerIpc";
 
 /**
  * 媒体会话管理器，负责不同平台的媒体控制集成
- *
  * 在 Electron 平台上会使用原生插件，Web 平台上会使用 Navigator.mediaSession
  */
 class MediaSessionManager {
@@ -78,6 +77,11 @@ class MediaSessionManager {
           player.setRate(event.rate);
         }
         break;
+      case "SetVolume":
+        if (event.volume != null) {
+          player.setVolume(event.volume);
+        }
+        break;
     }
   }
 
@@ -108,7 +112,6 @@ class MediaSessionManager {
             ? "Track"
             : "None";
       sendMediaPlayMode(shuffle, repeat);
-
       player.syncMediaPlayMode();
 
       // 同步初始播放速率
@@ -142,52 +145,49 @@ class MediaSessionManager {
 
   /**
    * 更新元数据
-   * @param coverBuffer 封面数据（可选，避免重复下载）
    */
-  public async updateMetadata(coverBuffer?: Uint8Array) {
+  public async updateMetadata() {
     if (!("mediaSession" in navigator) && !isElectron) return;
-
     const musicStore = useMusicStore();
     const settingStore = useSettingStore();
     const song = getPlaySongData();
-
     if (!song) return;
-
     if (this.metadataAbortController) {
       this.metadataAbortController.abort();
     }
-
     this.metadataAbortController = new AbortController();
     const { signal } = this.metadataAbortController;
-
     const metadata = this.buildMetadata(song);
-
     // 原生插件
     if (this.shouldUseNativeMedia() && settingStore.smtcOpen) {
       try {
-        // 获取封面数据
-        if (
-          !coverBuffer &&
+        let coverBuffer: Uint8Array | undefined;
+        // 本地文件且封面不是 Blob URL
+        if (song.path && !metadata.coverUrl.startsWith("blob:")) {
+          try {
+            const coverData = await window.electron.ipcRenderer.invoke(
+              "get-music-cover",
+              song.path,
+            );
+            if (coverData?.data && !signal.aborted) {
+              coverBuffer = new Uint8Array(coverData.data);
+            }
+          } catch {
+            // 忽略读取失败
+          }
+        }
+        // 在线歌曲
+        else if (
           metadata.coverUrl &&
           (metadata.coverUrl.startsWith("http") || metadata.coverUrl.startsWith("blob:"))
         ) {
           try {
-            if (metadata.coverUrl.startsWith("blob:")) {
-              const resp = await fetch(metadata.coverUrl, { signal });
-              const buf = await resp.arrayBuffer();
-              coverBuffer = new Uint8Array(buf);
-            } else {
-              const resp = await axios.get(metadata.coverUrl, {
-                responseType: "arraybuffer",
-                signal,
-              });
-              coverBuffer = new Uint8Array(resp.data);
-            }
+            const resp = await fetch(metadata.coverUrl, { signal });
+            coverBuffer = new Uint8Array(await resp.arrayBuffer());
           } catch {
             // 忽略下载失败
           }
         }
-
         sendMediaMetadata({
           songName: metadata.title,
           authorName: metadata.artist,
@@ -198,7 +198,7 @@ class MediaSessionManager {
           ncmId: typeof song.id === "number" ? song.id : undefined,
         });
       } catch (e) {
-        if (!axios.isCancel(e)) {
+        if (!(e instanceof DOMException && e.name === "AbortError")) {
           console.error("[Media] 更新元数据失败", e);
         }
       } finally {
@@ -235,12 +235,12 @@ class MediaSessionManager {
     return {
       title: song!.name,
       artist: isRadio
-        ? "播客电台"
+        ? song!.dj?.creator || "未知播客"
         : Array.isArray(song!.artists)
           ? song!.artists.map((a) => a.name).join("/")
           : String(song!.artists),
       album: isRadio
-        ? "播客电台"
+        ? song!.dj?.name || "未知播客"
         : typeof song!.album === "object"
           ? song!.album.name
           : String(song!.album),
@@ -295,8 +295,8 @@ class MediaSessionManager {
     if (this.shouldUseNativeMedia()) {
       if (immediate) {
         this.throttledSendTimeline.cancel();
-        // 取消节流就会立刻触发一次更新了，所以不再发送一个多余的事件
-        // sendMediaTimeline(position, duration);
+        // 绝对位置更新，避免 Seek 操作的进度更新被限流丢弃
+        sendMediaTimeline(position, duration, true);
       } else {
         this.throttledSendTimeline(position, duration);
       }
@@ -325,6 +325,12 @@ class MediaSessionManager {
 
     if (this.shouldUseNativeMedia()) {
       sendMediaPlaybackRate(rate);
+    }
+  }
+
+  public updateVolume(volume: number) {
+    if (this.shouldUseNativeMedia()) {
+      sendMediaVolume(volume);
     }
   }
 

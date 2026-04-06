@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { SongUrlResult } from "./unblock";
+import type { SongUrlResult } from "./unblock";
 import { serverLog } from "../../main/logger";
 import axios from "axios";
 import getKuwoSongUrl from "./kuwo";
@@ -51,6 +51,21 @@ export const initUnblockAPI = async (fastify: FastifyInstance) => {
       return reply.send(result);
     },
   );
+  // 构造匹配信息（fallback 用 lastIndexOf 兼容歌名含连字符的情况）
+  const buildMatchInfo = (query: { [key: string]: string }) => {
+    let songName = query.songName || "";
+    let artist = query.artist || "";
+    if (!songName && query.keyword) {
+      const lastIdx = query.keyword.lastIndexOf("-");
+      if (lastIdx > 0) {
+        songName = query.keyword.slice(0, lastIdx).trim();
+        artist = artist || query.keyword.slice(lastIdx + 1).trim();
+      } else {
+        songName = query.keyword.trim();
+      }
+    }
+    return { keyword: query.keyword || "", songName, artist };
+  };
   // kuwo
   fastify.get(
     "/unblock/kuwo",
@@ -58,8 +73,7 @@ export const initUnblockAPI = async (fastify: FastifyInstance) => {
       req: FastifyRequest<{ Querystring: { [key: string]: string } }>,
       reply: FastifyReply,
     ) => {
-      const { keyword } = req.query;
-      const result = await getKuwoSongUrl(keyword);
+      const result = await getKuwoSongUrl(buildMatchInfo(req.query));
       return reply.send(result);
     },
   );
@@ -70,8 +84,7 @@ export const initUnblockAPI = async (fastify: FastifyInstance) => {
       req: FastifyRequest<{ Querystring: { [key: string]: string } }>,
       reply: FastifyReply,
     ) => {
-      const { keyword } = req.query;
-      const result = await getBodianSongUrl(keyword);
+      const result = await getBodianSongUrl(buildMatchInfo(req.query));
       return reply.send(result);
     },
   );
@@ -82,8 +95,7 @@ export const initUnblockAPI = async (fastify: FastifyInstance) => {
       req: FastifyRequest<{ Querystring: { [key: string]: string } }>,
       reply: FastifyReply,
     ) => {
-      const { keyword } = req.query;
-      const result = await getGequbaoSongUrl(keyword);
+      const result = await getGequbaoSongUrl(buildMatchInfo(req.query));
       return reply.send(result);
     },
   );

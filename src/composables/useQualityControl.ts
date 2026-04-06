@@ -31,6 +31,7 @@ export const useQualityControl = () => {
     const song = musicStore.playSong;
     if (song.path) return "本地";
     if (song.pc) return "云盘";
+    if (song.type === "radio") return "电台";
     if (statusStore.isUnlocked) return "解锁";
     if (!quality) return "未知";
     return qualityNameMap[quality] || quality;
@@ -45,7 +46,7 @@ export const useQualityControl = () => {
     if (!current || !availableQualities.value.length) return settingStore.songLevel;
     // 在可用列表中找到与当前播放音质名称匹配的级别
     const found = availableQualities.value.find((q) => handleSongQuality(q) === current);
-    return found ? found.level : settingStore.songLevel;
+    return found ? found.level : current;
   });
 
   // 音质选项
@@ -65,7 +66,7 @@ export const useQualityControl = () => {
                 alignItems: "center",
                 width: "100%",
                 minWidth: "150px",
-                fontWeight: isDefaultQuality ? "bold" : "normal",
+                fontWeight: isPlayingQuality ? "bold" : "normal",
               },
             },
             [

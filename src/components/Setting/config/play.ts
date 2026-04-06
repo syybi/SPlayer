@@ -136,6 +136,10 @@ export const usePlaySettings = (): SettingConfig => {
       positiveText: "重启",
       negativeText: "取消",
       onPositiveClick: () => {
+        // 切换引擎类型时重置为目标引擎的默认设备，避免跨引擎设备 ID 不兼容
+        if (targetPlaybackEngine !== settingStore.playbackEngine) {
+          settingStore.playDevice = targetPlaybackEngine === "mpv" ? "auto" : "default";
+        }
         settingStore.playbackEngine = targetPlaybackEngine;
         settingStore.audioEngine = targetAudioEngine;
         if (isElectron) {
@@ -165,8 +169,14 @@ export const usePlaySettings = (): SettingConfig => {
             }),
           );
 
-          // 初始化选中为当前 mpv 设备
-          if (!settingStore.playDevice || settingStore.playDevice === "default") {
+          // 验证已保存的设备是否在当前设备列表中
+          const deviceIds = result.devices.map((d: { id: string }) => d.id);
+          const savedValid =
+            settingStore.playDevice &&
+            settingStore.playDevice !== "default" &&
+            deviceIds.includes(settingStore.playDevice);
+
+          if (!savedValid) {
             const current = await window.electron.ipcRenderer.invoke(
               "mpv-get-current-audio-device",
             );
@@ -179,7 +189,7 @@ export const usePlaySettings = (): SettingConfig => {
         }
       } catch (e) {
         console.error("获取 MPV 音频设备失败:", e);
-        if (!settingStore.playDevice || settingStore.playDevice === "default") {
+        if (!settingStore.playDevice) {
           settingStore.playDevice = "auto";
         }
       }
@@ -198,6 +208,14 @@ export const usePlaySettings = (): SettingConfig => {
         label: device.label,
         value: device.deviceId,
       }));
+
+      // 验证已保存的设备是否在当前设备列表中
+      if (
+        settingStore.playDevice &&
+        !outputData.some((d) => d.deviceId === settingStore.playDevice)
+      ) {
+        settingStore.playDevice = "default";
+      }
     } catch (e) {
       console.error("获取 WebAudio 设备失败", e);
     }
@@ -224,9 +242,13 @@ export const usePlaySettings = (): SettingConfig => {
       return;
     }
 
-    player.toggleOutputDevice(deviceId);
-    settingStore.playDevice = deviceId;
-    window.$message.success(`已切换输出设备为 ${label}`);
+    try {
+      await player.toggleOutputDevice(deviceId);
+      settingStore.playDevice = deviceId;
+      window.$message.success(`已切换输出设备为 ${label}`);
+    } catch (e) {
+      window.$message.error(`切换输出设备失败: ${e}`);
+    }
   };
   // 监听播放引擎变化以刷新设备列表
   watch(
@@ -489,6 +511,16 @@ export const usePlaySettings = (): SettingConfig => {
             }),
           },
           {
+            key: "uncensorMaskedProfanity",
+            label: "Fuck *** Mode",
+            type: "switch",
+            description: "把歌词里的 f**k 等屏蔽词还原为原词",
+            value: computed({
+              get: () => settingStore.uncensorMaskedProfanity,
+              set: (v) => (settingStore.uncensorMaskedProfanity = v),
+            }),
+          },
+          {
             key: "audioEngine",
             label: "音频处理引擎",
             type: "select",
@@ -511,6 +543,63 @@ export const usePlaySettings = (): SettingConfig => {
               get: () => audioEngineSelectValue.value,
               set: (v) => handleAudioEngineSelect(v),
             }),
+          },
+          {
+            key: "audioLatencyHint",
+            label: "Web Audio 延迟策略",
+            type: "select",
+            tags: [{ text: "Beta", type: "warning" }],
+            description:
+              "调整 Web Audio 的延迟策略，修改后需重启。<br>" +
+              "“低延迟模式（interactive）”延迟更低但可能不稳定；<br>" +
+              "“高效能模式（playback）”延迟偏高但播放更稳定。<br>" +
+              "已针对“高效能模式（playback）”补偿了音频输出延迟，理论上不会造成歌词与音频不同步的问题。",
+            options: [
+              { label: "低延迟模式（interactive）", value: "interactive" },
+              { label: "高效能模式（playback）", value: "playback" },
+            ],
+            value: computed({
+              get: () => settingStore.audioLatencyHint,
+              set: (v) => {
+                window.$dialog.warning({
+                  title: "更改延迟策略",
+                  content: "此操作需要重启应用才能生效，是否立即重启？",
+                  positiveText: "重启",
+                  negativeText: "取消",
+                  onPositiveClick: () => {
+                    settingStore.audioLatencyHint = v;
+                    if (isElectron) {
+                      window.electron.ipcRenderer.send("win-restart");
+                    } else {
+                      window.location.reload();
+                    }
+                  },
+                });
+              },
+            }),
+            show: computed(
+              () =>
+                settingStore.playbackEngine === "web-audio" &&
+                settingStore.audioEngine === "element",
+            ),
+          },
+          {
+            key: "audioDelayCompensation",
+            label: "音频与歌词同步补偿",
+            type: "input-number",
+            description:
+              "手动补偿音频与歌词进度延迟。<br>正值歌词变快，负值歌词进度变慢。<br>适用于移动端等自动延迟检测不准的设备。",
+            tags: [{ text: "Beta", type: "warning" }],
+            show: computed(() => settingStore.audioLatencyHint === "playback"),
+            min: -1000,
+            max: 1000,
+            step: 10,
+            suffix: "ms",
+            value: computed({
+              get: () => settingStore.audioDelayCompensation,
+              set: (v) => (settingStore.audioDelayCompensation = v ?? 0),
+            }),
+            defaultValue: 0,
           },
           {
             key: "playSongDemo",
