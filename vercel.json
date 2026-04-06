@@ -1,6 +1,6 @@
 {
   "outputDirectory": "out/renderer",
-  "buildCommand": "pnpm build:web",
+  "buildCommand": "SKIP_NATIVE_BUILD=true rimraf dist out && electron-vite build",
   "framework": null,
-  "installCommand": "corepack enable && corepack prepare pnpm@10.28.1 --activate && pnpm install --ignore-scripts"
+  "installCommand": "pnpm install --ignore-scripts"
 }
